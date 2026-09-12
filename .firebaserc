@@ -1,0 +1,18 @@
+{
+  "projects": {
+    "default": "mystore-d2838"
+  },
+  "targets": {
+    "mystore-d2838": {
+      "hosting": {
+        "app": [
+          "mystore-d2838"
+        ],
+        "shop": [
+          "shoping-site-9d2cb"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

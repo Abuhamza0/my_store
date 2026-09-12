@@ -1,0 +1,73 @@
+{
+  "hosting": [
+    {
+      "target": "app",
+      "public": "build/web_app",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ],
+      "rewrites": [
+        {
+          "source": "**",
+          "destination": "/index.html"
+        }
+      ]
+    },
+    {
+      "target": "shop",
+      "public": "build/web_shop",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ],
+      "rewrites": [
+        {
+          "source": "**",
+          "destination": "/index.html"
+        }
+      ]
+    }
+  ],
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "mystore-d2838",
+          "appId": "1:550067676415:android:ff4eb6edda4afb554d18ca",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "mystore-d2838",
+          "configurations": {
+            "android": "1:550067676415:android:ff4eb6edda4afb554d18ca",
+            "ios": "1:550067676415:ios:e19877323180054b4d18ca",
+            "macos": "1:550067676415:ios:e19877323180054b4d18ca",
+            "web": "1:550067676415:web:0ae5263ae497fe354d18ca",
+            "windows": "1:550067676415:web:b43e496bb02d15424d18ca"
+          }
+        }
+      }
+    }
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "disallowLegacyRuntimeConfig": true,
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ],
+      "predeploy": []
+    }
+  ]
+}
+

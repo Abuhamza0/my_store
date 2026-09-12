@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <base href="/">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>متجري - التطبيق</title>
+    <link rel="manifest" href="manifest.json">
+    <script src="flutter_bootstrap.js"></script>
+</head>
+<body>
+<script>
+    // ✅ تحميل main_app.dart
+    window.addEventListener('load', function() {
+      _flutter.loader.loadEntrypoint({
+        entrypoint: 'mainApp'
+      });
+    });
+</script>
+</body>
+</html>
