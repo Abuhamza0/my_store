@@ -6,7 +6,7 @@ on:
 jobs:
   build-ios:
     name: Build iOS IPA
-    runs-on: macos-14
+    runs-on: macos-15
     
     steps:
       - name: Checkout repository
@@ -14,16 +14,20 @@ jobs:
 
       - name: Select Xcode version
         run: |
-          sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+          sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer || \
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
 
-      - name: Show available platforms
+      - name: Install iOS Platform
         run: |
-          echo "Available SDKs:"
-          xcodebuild -showsdks
-          echo ""
-          echo "Installed Platforms:"
+          echo "Installing iOS 18.0 platform..."
+          xcodebuild -downloadPlatform iOS || true
+          echo "Available runtimes:"
           xcrun simctl list runtimes || true
+
+      - name: Show available SDKs
+        run: |
+          xcodebuild -showsdks
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
