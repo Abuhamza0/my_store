@@ -29,6 +29,12 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Disable Swift Package Manager
+        run: |
+          echo "Disabling Swift Package Manager..."
+          flutter config --no-enable-swift-package-manager
+          echo "✅ SPM disabled"
+
       - name: Install dependencies
         run: flutter pub get
 
@@ -42,7 +48,7 @@ jobs:
           echo "Regenerating iOS project files..."
           rm -rf ios
           flutter create --platforms=ios .
-          echo "iOS project regenerated"
+          echo "✅ iOS project regenerated"
 
       - name: Set iOS Deployment Target to 15.5
         run: |
@@ -55,7 +61,7 @@ jobs:
           " ios/Podfile
           fi
           find ios -name "project.pbxproj" -exec sed -i '' "s/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*;/IPHONEOS_DEPLOYMENT_TARGET = 15.5;/g" {} +
-          echo "Done!"
+          echo "✅ Done!"
 
       - name: Install Pods
         run: |
