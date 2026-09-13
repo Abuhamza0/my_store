@@ -204,7 +204,7 @@ class _StoreLoginPageState extends State<StoreLoginPage>
     try {
       String email = input;
 
-      // 2. إذا لم يكن المدخل إيميل صريح، ابحث عن البريد الإلكتروني باسم المستخدم في Firestore
+      // 2. البحث عن البريد الإلكتروني باسم المستخدم في Firestore
       if (!input.contains('@')) {
         final userDoc = await FirebaseFirestore.instance
             .collection('users')
@@ -215,7 +215,6 @@ class _StoreLoginPageState extends State<StoreLoginPage>
         if (userDoc.docs.isNotEmpty) {
           email = userDoc.docs.first.data()['email']?.toString().trim() ?? '';
         } else {
-          // إذا لم نجده في حقل name، نجرب البحث في حقل store_name أو username
           final altUserDoc = await FirebaseFirestore.instance
               .collection('users')
               .where('store_name', isEqualTo: input)
@@ -223,12 +222,13 @@ class _StoreLoginPageState extends State<StoreLoginPage>
               .get();
 
           if (altUserDoc.docs.isNotEmpty) {
-            email = altUserDoc.docs.first.data()['email']?.toString().trim() ?? '';
+            email =
+                altUserDoc.docs.first.data()['email']?.toString().trim() ?? '';
           }
         }
       }
 
-      // 3. التأكد من أن البريد صيغته صحيحة ولا يزال غير فارغ
+      // 3. التأكد من صيغة البريد
       final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
       if (email.isEmpty || !emailRegex.hasMatch(email)) {
         if (!mounted) return;
@@ -253,19 +253,18 @@ class _StoreLoginPageState extends State<StoreLoginPage>
       final uid = user.uid;
 
       // 5. جلب بيانات المستخدم من Firestore
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .get();
+      final doc =
+      await FirebaseFirestore.instance.collection('users').doc(uid).get();
 
       final foundData = doc.data() ?? {};
       final storeEmail = foundData['email']?.toString() ?? email;
-      final storeName = foundData['name']?.toString() ?? foundData['store_name']?.toString() ?? email;
+      final storeName = foundData['name']?.toString() ??
+          foundData['store_name']?.toString() ??
+          email;
 
-      // المعرف الخاص بحساب الأدمن
       const adminStoreId = 'Yfb0ds0mYJeVanXbRnH2VfvkPYG2';
 
-      // 6. التحقق هل الحساب أدمن أم مستخدم عادي
+      // 6. التحقق هل الحساب أدمن
       final bool isAdmin = (uid == adminStoreId) ||
           (foundData['role']?.toString() == 'admin') ||
           (foundData['is_admin'] == true);
@@ -283,7 +282,6 @@ class _StoreLoginPageState extends State<StoreLoginPage>
       await settingsBox.put('store_logged_in', true);
       await settingsBox.put('is_admin', isAdmin);
 
-      // التوجيه المباشر للأدمن
       if (isAdmin) {
         if (!mounted) return;
         setState(() => _isLoading = false);
@@ -291,7 +289,7 @@ class _StoreLoginPageState extends State<StoreLoginPage>
         return;
       }
 
-      // فحص الجلسات للمستخدم العادي
+      // فحص الجلسات
       final otherDevice = await SessionService.getActiveOtherDevice();
       if (otherDevice != null) {
         if (!mounted) return;
@@ -480,15 +478,19 @@ class _StoreLoginPageState extends State<StoreLoginPage>
     );
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  //  🎨 BUILD — نسخة الهاتف فقط
+  // ═══════════════════════════════════════════════════════════════
+
   @override
   Widget build(BuildContext context) {
     final isArabic = Get.locale?.languageCode == 'ar';
     final size = MediaQuery.sizeOf(context);
     final compact = size.height < 720;
-    final desktop = size.width >= 900;
 
     return Scaffold(
       backgroundColor: _navy,
+      resizeToAvoidBottomInset: true,
       body: Stack(
         children: [
           const _LoginBackdrop(),
@@ -497,43 +499,56 @@ class _StoreLoginPageState extends State<StoreLoginPage>
               opacity: _fadeAnimation,
               child: SlideTransition(
                 position: _slideAnimation,
-                child: Center(
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: desktop ? 44 : 20,
-                      vertical: compact ? 12 : 28,
-                    ),
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxWidth: desktop ? 1080 : 520,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    // ✅ هامش أفقي ذكي: أصغر على الشاشات الصغيرة
+                    final horizontalPadding =
+                    constraints.maxWidth < 360 ? 16.0 : 20.0;
+
+                    return SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: horizontalPadding,
+                        vertical: compact ? 10 : 22,
                       ),
-                      child: desktop
-                          ? _buildDesktopLayout(
-                        context,
-                        isArabic: isArabic,
-                        compact: compact,
-                      )
-                          : _buildMobileLayout(
-                        context,
-                        isArabic: isArabic,
-                        compact: compact,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minHeight: constraints.maxHeight -
+                              (compact ? 20 : 44),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _buildBrandHeader(compact: compact),
+                            SizedBox(height: compact ? 16 : 26),
+                            _buildLoginCard(
+                              context,
+                              isArabic: isArabic,
+                              compact: compact,
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 ),
               ),
             ),
           ),
+          // زر اللغة — أعلى اليمين للعربية، أعلى اليسار للإنجليزية
           Positioned(
-            top: 18,
-            right: isArabic ? 18 : null,
-            left: isArabic ? null : 18,
+            top: 14,
+            right: isArabic ? 14 : null,
+            left: isArabic ? null : 14,
             child: _buildLanguageButton(isArabic),
           ),
+          // شارة الاتصال — الجهة المعاكسة
           Positioned(
-            top: 18,
-            left: isArabic ? 18 : null,
-            right: isArabic ? null : 18,
+            top: 14,
+            left: isArabic ? 14 : null,
+            right: isArabic ? null : 14,
             child: _buildConnectionBadge(),
           ),
         ],
@@ -541,122 +556,18 @@ class _StoreLoginPageState extends State<StoreLoginPage>
     );
   }
 
-  Widget _buildDesktopLayout(
-      BuildContext context, {
-        required bool isArabic,
-        required bool compact,
-      }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Expanded(
-          flex: 5,
-          child: Padding(
-            padding: const EdgeInsetsDirectional.only(end: 54),
-            child: _buildBrandPanel(context, compact: compact),
-          ),
-        ),
-        Expanded(
-          flex: 4,
-          child: _buildLoginCard(
-            context,
-            isArabic: isArabic,
-            compact: compact,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildMobileLayout(
-      BuildContext context, {
-        required bool isArabic,
-        required bool compact,
-      }) {
-    return Column(
-      children: [
-        _buildBrandHeader(compact: compact),
-        SizedBox(height: compact ? 18 : 30),
-        _buildLoginCard(
-          context,
-          isArabic: isArabic,
-          compact: compact,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildBrandPanel(BuildContext context, {required bool compact}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        _buildBrandHeader(compact: compact, large: true),
-        SizedBox(height: compact ? 28 : 44),
-        Container(
-          constraints: const BoxConstraints(maxWidth: 470),
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Text(
-                'نظام إدارة متجرك\nبأسلوب أكثر ذكاءً',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: compact ? 28 : 40,
-                  height: 1.18,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -.8,
-                  shadows: [
-                    Shadow(color: _gold.withOpacity(.18), blurRadius: 22),
-                  ],
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 18),
-              Container(
-                width: 62,
-                height: 3,
-                decoration: BoxDecoration(
-                  color: _gold,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              const SizedBox(height: 18),
-              Text(
-                'كل ما تحتاجه لإدارة المبيعات والعملاء والطلبات في تجربة واحدة أنيقة وسريعة.',
-                style: TextStyle(
-                  color: Colors.white.withOpacity(.68),
-                  fontSize: compact ? 13 : 15,
-                  height: 1.7,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 28),
-              Wrap(
-                alignment: WrapAlignment.center,
-                spacing: 10,
-                runSpacing: 10,
-                children: const [
-                  _FeaturePill(icon: Icons.point_of_sale_rounded, text: 'المبيعات'),
-                  _FeaturePill(icon: Icons.inventory_2_rounded, text: 'المخزون'),
-                  _FeaturePill(icon: Icons.receipt_long_rounded, text: 'الطلبات'),
-                  _FeaturePill(icon: Icons.analytics_rounded, text: 'التقارير'),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
+  // ═══════════════════════════════════════════════════════════════
+  //  🎯 هيدر العلامة التجارية (نسخة مصغّرة للهاتف)
+  // ═══════════════════════════════════════════════════════════════
 
   Widget _buildBrandHeader({required bool compact, bool large = false}) {
-    return Row(
+    return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        // الشعار
         Container(
-          width: large ? 82 : (compact ? 62 : 72),
-          height: large ? 82 : (compact ? 62 : 72),
+          width: large ? 82 : (compact ? 66 : 76),
+          height: large ? 82 : (compact ? 66 : 76),
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(.07),
@@ -664,7 +575,7 @@ class _StoreLoginPageState extends State<StoreLoginPage>
             border: Border.all(color: _gold.withOpacity(.38)),
             boxShadow: [
               BoxShadow(
-                color: _gold.withOpacity(.12),
+                color: _gold.withOpacity(.14),
                 blurRadius: 30,
                 spreadRadius: 2,
               ),
@@ -680,38 +591,40 @@ class _StoreLoginPageState extends State<StoreLoginPage>
             ),
           ),
         ),
-        const SizedBox(width: 16),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ShaderMask(
-              shaderCallback: (bounds) => const LinearGradient(
-                colors: [_goldLight, _gold],
-              ).createShader(bounds),
-              child: Text(
-                'my_store_service'.tr,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: large ? 26 : (compact ? 20 : 23),
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: .2,
-                ),
-              ),
+        SizedBox(height: compact ? 12 : 16),
+        // اسم التطبيق
+        ShaderMask(
+          shaderCallback: (bounds) => const LinearGradient(
+            colors: [_goldLight, _gold],
+          ).createShader(bounds),
+          child: Text(
+            'my_store_service'.tr,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: large ? 24 : (compact ? 20 : 22),
+              fontWeight: FontWeight.w900,
+              letterSpacing: .2,
             ),
-            const SizedBox(height: 4),
-            Text(
-              'nitham_soft'.tr,
-              style: TextStyle(
-                color: Colors.white.withOpacity(.48),
-                fontSize: large ? 12 : 10,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'nitham_soft'.tr,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Colors.white.withOpacity(.48),
+            fontSize: compact ? 10 : 11,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ],
     );
   }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  🃏 بطاقة تسجيل الدخول
+  // ═══════════════════════════════════════════════════════════════
 
   Widget _buildLoginCard(
       BuildContext context, {
@@ -720,11 +633,11 @@ class _StoreLoginPageState extends State<StoreLoginPage>
       }) {
     return Container(
       width: double.infinity,
-      constraints: const BoxConstraints(maxWidth: 470),
-      padding: EdgeInsets.all(compact ? 22 : 30),
+      constraints: const BoxConstraints(maxWidth: 460),
+      padding: EdgeInsets.all(compact ? 20 : 26),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(.975),
-        borderRadius: BorderRadius.circular(30),
+        borderRadius: BorderRadius.circular(28),
         border: Border.all(color: Colors.white.withOpacity(.25)),
         boxShadow: [
           BoxShadow(
@@ -744,18 +657,19 @@ class _StoreLoginPageState extends State<StoreLoginPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // أيقونة القفل
             Column(
               children: [
                 Container(
-                  width: 62,
-                  height: 62,
+                  width: 58,
+                  height: 58,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [_gold.withOpacity(.22), _gold.withOpacity(.06)],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(18),
                     border: Border.all(color: _gold.withOpacity(.28)),
                     boxShadow: [
                       BoxShadow(
@@ -768,21 +682,21 @@ class _StoreLoginPageState extends State<StoreLoginPage>
                   child: const Icon(
                     Icons.lock_open_rounded,
                     color: _navy,
-                    size: 28,
+                    size: 26,
                   ),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 12),
                 Text(
                   'login'.tr,
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: _navy,
-                    fontSize: 27,
+                    fontSize: 24,
                     fontWeight: FontWeight.w900,
                     letterSpacing: -.3,
                   ),
                 ),
-                const SizedBox(height: 5),
+                const SizedBox(height: 4),
                 Text(
                   'welcome_back'.tr,
                   textAlign: TextAlign.center,
@@ -794,7 +708,8 @@ class _StoreLoginPageState extends State<StoreLoginPage>
                 ),
               ],
             ),
-            SizedBox(height: compact ? 20 : 26),
+            SizedBox(height: compact ? 18 : 24),
+            // حقل المستخدم
             _buildField(
               controller: _emailController,
               label: 'username_or_email_phone'.tr,
@@ -809,7 +724,8 @@ class _StoreLoginPageState extends State<StoreLoginPage>
                 return null;
               },
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
+            // حقل كلمة المرور
             _buildField(
               controller: _passwordController,
               label: 'password'.tr,
@@ -817,7 +733,8 @@ class _StoreLoginPageState extends State<StoreLoginPage>
               obscureText: _obscure,
               textDirection: TextDirection.ltr,
               suffix: IconButton(
-                tooltip: _obscure ? 'إظهار كلمة المرور' : 'إخفاء كلمة المرور',
+                tooltip:
+                _obscure ? 'إظهار كلمة المرور' : 'إخفاء كلمة المرور',
                 onPressed: () => setState(() => _obscure = !_obscure),
                 icon: Icon(
                   _obscure
@@ -834,21 +751,18 @@ class _StoreLoginPageState extends State<StoreLoginPage>
                 return null;
               },
             ),
-            SizedBox(height: compact ? 18 : 22),
+            SizedBox(height: compact ? 16 : 20),
             _buildLoginButton(),
-            const SizedBox(height: 14),
-            _buildPairingButton(),
-            const SizedBox(height: 8),
-            Container(
-              height: 1,
-              color: Colors.black.withOpacity(.055),
-            ),
             const SizedBox(height: 12),
+            _buildPairingButton(),
+            const SizedBox(height: 6),
+            Container(height: 1, color: Colors.black.withOpacity(.055)),
+            const SizedBox(height: 10),
             TextButton(
               onPressed: () => Get.to(() => const StoreRegisterPage()),
               style: TextButton.styleFrom(
                 foregroundColor: _navy,
-                padding: const EdgeInsets.symmetric(vertical: 12),
+                padding: const EdgeInsets.symmetric(vertical: 11),
               ),
               child: Text(
                 'no_account_create'.tr,
@@ -863,6 +777,10 @@ class _StoreLoginPageState extends State<StoreLoginPage>
       ),
     );
   }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  🎨 الحقول
+  // ═══════════════════════════════════════════════════════════════
 
   Widget _buildField({
     required TextEditingController controller,
@@ -897,26 +815,26 @@ class _StoreLoginPageState extends State<StoreLoginPage>
         fillColor: _surface,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
-          vertical: 17,
+          vertical: 16,
         ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(17),
+          borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(color: Colors.black.withOpacity(.055)),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(17),
+          borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(color: Colors.black.withOpacity(.055)),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(17),
+          borderRadius: BorderRadius.circular(16),
           borderSide: const BorderSide(color: _gold, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(17),
+          borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(color: Colors.red.shade300),
         ),
         focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(17),
+          borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(color: Colors.red.shade400, width: 1.4),
         ),
       ),
@@ -925,10 +843,10 @@ class _StoreLoginPageState extends State<StoreLoginPage>
 
   Widget _buildLoginButton() {
     return SizedBox(
-      height: 56,
+      height: 54,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(17),
+          borderRadius: BorderRadius.circular(16),
           gradient: const LinearGradient(
             begin: AlignmentDirectional.centerStart,
             end: AlignmentDirectional.centerEnd,
@@ -951,7 +869,7 @@ class _StoreLoginPageState extends State<StoreLoginPage>
             disabledForegroundColor: Colors.white70,
             shadowColor: Colors.transparent,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(17),
+              borderRadius: BorderRadius.circular(16),
             ),
           ),
           child: AnimatedSwitcher(
@@ -997,7 +915,7 @@ class _StoreLoginPageState extends State<StoreLoginPage>
       onPressed: _isLoading ? null : _showPairingQrCode,
       style: TextButton.styleFrom(
         foregroundColor: _navy,
-        padding: const EdgeInsets.symmetric(vertical: 11),
+        padding: const EdgeInsets.symmetric(vertical: 10),
       ),
       icon: const Icon(Icons.qr_code_2_rounded, size: 20),
       label: Text(
@@ -1007,6 +925,10 @@ class _StoreLoginPageState extends State<StoreLoginPage>
     );
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  //  🔘 أزرار علوية (لغة + اتصال)
+  // ═══════════════════════════════════════════════════════════════
+
   Widget _buildLanguageButton(bool isArabic) {
     return Material(
       color: Colors.white.withOpacity(.07),
@@ -1015,7 +937,7 @@ class _StoreLoginPageState extends State<StoreLoginPage>
         onTap: _changeLanguage,
         borderRadius: BorderRadius.circular(14),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
             border: Border.all(color: Colors.white.withOpacity(.12)),
@@ -1026,9 +948,9 @@ class _StoreLoginPageState extends State<StoreLoginPage>
               const Icon(
                 Icons.language_rounded,
                 color: _goldLight,
-                size: 17,
+                size: 16,
               ),
-              const SizedBox(width: 7),
+              const SizedBox(width: 6),
               Text(
                 isArabic ? 'EN' : 'عربي',
                 style: const TextStyle(
@@ -1045,14 +967,14 @@ class _StoreLoginPageState extends State<StoreLoginPage>
   }
 
   Widget _buildConnectionBadge() {
+    final color =
+    _isOnline ? const Color(0xFF22C55E) : const Color(0xFFEF4444);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: (_isOnline ? const Color(0xFF22C55E) : const Color(0xFFEF4444)).withOpacity(.09),
+        color: color.withOpacity(.09),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: (_isOnline ? const Color(0xFF22C55E) : const Color(0xFFEF4444)).withOpacity(.28),
-        ),
+        border: Border.all(color: color.withOpacity(.28)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1061,22 +983,20 @@ class _StoreLoginPageState extends State<StoreLoginPage>
             width: 7,
             height: 7,
             decoration: BoxDecoration(
-              color: _isOnline ? const Color(0xFF22C55E) : const Color(0xFFEF4444),
+              color: color,
               shape: BoxShape.circle,
               boxShadow: [
-                BoxShadow(
-                  color: (_isOnline ? const Color(0xFF22C55E) : const Color(0xFFEF4444))
-                      .withOpacity(.55),
-                  blurRadius: 8,
-                ),
+                BoxShadow(color: color.withOpacity(.55), blurRadius: 8),
               ],
             ),
           ),
-          const SizedBox(width: 7),
+          const SizedBox(width: 6),
           Text(
             _isOnline ? 'online'.tr : 'offline'.tr,
             style: TextStyle(
-              color: _isOnline ? const Color(0xFFB7F7C9) : const Color(0xFFFFB8B8),
+              color: _isOnline
+                  ? const Color(0xFFB7F7C9)
+                  : const Color(0xFFFFB8B8),
               fontSize: 11,
               fontWeight: FontWeight.w700,
             ),
@@ -1086,6 +1006,10 @@ class _StoreLoginPageState extends State<StoreLoginPage>
     );
   }
 }
+
+// ═══════════════════════════════════════════════════════════════
+//  🌌 الخلفية
+// ═══════════════════════════════════════════════════════════════
 
 class _LoginBackdrop extends StatelessWidget {
   const _LoginBackdrop();
@@ -1162,40 +1086,4 @@ class _GridPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _FeaturePill extends StatelessWidget {
-  const _FeaturePill({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(.055),
-        borderRadius: BorderRadius.circular(13),
-        border: Border.all(color: Colors.white.withOpacity(.09)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.auto_awesome_rounded, color: Color(0xFFF4D77A), size: 13),
-          const SizedBox(width: 6),
-          Icon(icon, color: Colors.white70, size: 15),
-          const SizedBox(width: 6),
-          Text(
-            text,
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }

@@ -1,20 +1,17 @@
 // add_product_page.dart
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:hive/hive.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'dart:typed_data';
-import 'product_model.dart';
-import 'product_controller.dart';
-import 'custom_category_model.dart';
 import 'package:mystore/utils/image_helper.dart';
 import 'package:mystore/core/services/locale_service.dart';
 import '../../core/services/image_upload_service.dart';
+import 'product_model.dart';
+import 'product_controller.dart';
+import 'custom_category_model.dart';
 
 // ═══════════════════════════════════════════════════════════════
 //  🎨 لوحة ألوان فاخرة
@@ -24,15 +21,12 @@ abstract class _Lux {
   static const Color goldLight = Color(0xFFF0D97A);
   static const Color goldDeep = Color(0xFF9A7B1F);
   static const Color champagne = Color(0xFFE8D9A8);
-
   static const Color midnight = Color(0xFF0A1322);
   static const Color navy = Color(0xFF0F1A2B);
   static const Color navySoft = Color(0xFF182945);
   static const Color navyCard = Color(0xFF111A2A);
-
   static const Color bgDark = Color(0xFF060A12);
   static const Color bgLight = Color(0xFFF5F7FB);
-
   static const Color emerald = Color(0xFF10B981);
   static const Color ruby = Color(0xFFE11D48);
   static const Color sapphire = Color(0xFF2563EB);
@@ -84,8 +78,8 @@ class _AddProductPageState extends State<AddProductPage> {
   final List<String> _selectedImages = [];
 
   String? _selectedImagePath;
-  bool _isLoading = false;
   bool _isSaving = false;
+  bool _showSaveButton = false; // ✅ إظهار/إخفاء زر الحفظ
   String _currency = 'SAR';
 
   List<CustomCategory> _allCategories = [];
@@ -100,14 +94,19 @@ class _AddProductPageState extends State<AddProductPage> {
   bool _hasMultipleSizes = false;
   List<ProductSize> _sizes = [];
 
-  // ✨ حالة طي قسم الصور
   bool _imagesExpanded = true;
 
-  // ✨ مفاتيح التركيز للتنقل السلس
+  // ✅ FocusNodes لكل الحقول
   final _nameFocus = FocusNode();
   final _priceFocus = FocusNode();
   final _stockFocus = FocusNode();
   final _descFocus = FocusNode();
+  final _sectionFocus = FocusNode();
+  final _subCategoryFocus = FocusNode();
+  final _typeFocus = FocusNode();
+  final _flavorFocus = FocusNode();
+
+  Worker? _productsWorker;
 
   String _getStoreId() {
     final email = Hive.box('settings')
@@ -122,14 +121,60 @@ class _AddProductPageState extends State<AddProductPage> {
   @override
   void initState() {
     super.initState();
+
     _currency = Hive.box('settings')
         .get('currency', defaultValue: 'SAR')
         ?.toString() ??
         'SAR';
+
     _loadCategories();
+    _ensureProductsLoaded();
     _loadLocalAndCloudSuggestions();
+
+    _productsWorker = ever<List<Product>>(
+      _productController.products,
+          (_) {
+        if (mounted) _loadLocalAndCloudSuggestions();
+      },
+    );
+
+    ever(LocaleService.current, (_) {
+      if (mounted) setState(() {});
+    });
+
+    _prefillFields();
     _loadRecentProducts();
 
+    // ✅ راقب الحقول الرئيسية لإظهار/إخفاء زر الحفظ
+    _nameController.addListener(_checkRequiredFields);
+    _priceController.addListener(_checkRequiredFields);
+    _typeController.addListener(_checkRequiredFields);
+
+    // ✅ تحقق أولي بعد أول build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkRequiredFields();
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  ✅ إظهار/إخفاء زر الحفظ حسب الحقول الرئيسية
+  // ═══════════════════════════════════════════════════════════════
+  void _checkRequiredFields() {
+    if (!mounted) return;
+
+    final nameOk = _nameController.text.trim().isNotEmpty;
+    final priceOk =
+        (double.tryParse(_priceController.text.trim()) ?? 0) > 0;
+    final categoryOk = _typeController.text.trim().isNotEmpty;
+
+    final shouldShow = nameOk && priceOk && categoryOk;
+
+    if (shouldShow != _showSaveButton) {
+      setState(() => _showSaveButton = shouldShow);
+    }
+  }
+
+  void _prefillFields() {
     if (widget.product != null) {
       _nameController.text = widget.product!.name;
       _descriptionController.text = widget.product!.description;
@@ -141,14 +186,17 @@ class _AddProductPageState extends State<AddProductPage> {
           _findSubCategoryForCategory(widget.product!.category);
       _typeController.text = widget.product!.category;
       _flavorController.text = widget.product!.flavor ?? '';
+
       _selectedImagePath = widget.product!.imagePath !=
           'assets/images/product_placeholder.png'
           ? widget.product!.imagePath
           : null;
+
       _selectedImages.clear();
-      _selectedImages.addAll(widget.product!.additionalImages);
-      if (_selectedImagePath != null && _selectedImages.isEmpty) {
-        _selectedImages.add(_selectedImagePath!);
+      for (final img in widget.product!.additionalImages) {
+        if (img != _selectedImagePath) {
+          _selectedImages.add(img);
+        }
       }
     } else if (widget.categoryName != null) {
       _typeController.text = widget.categoryName!;
@@ -161,14 +209,34 @@ class _AddProductPageState extends State<AddProductPage> {
     if (widget.flavor != null && widget.flavor!.isNotEmpty) {
       _flavorController.text = widget.flavor!;
     }
+  }
 
-    ever(LocaleService.current, (_) {
-      if (mounted) setState(() {});
-    });
+  Future<void> _ensureProductsLoaded() async {
+    try {
+      if (_productController.products.isEmpty) {
+        try {
+          // ignore: avoid_dynamic_calls
+          await (_productController as dynamic).loadProducts();
+        } catch (_) {
+          try {
+            // ignore: avoid_dynamic_calls
+            await (_productController as dynamic).refresh();
+          } catch (_) {}
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ _ensureProductsLoaded: $e');
+    }
   }
 
   @override
   void dispose() {
+    // ✅ أزل المستمعين
+    _nameController.removeListener(_checkRequiredFields);
+    _priceController.removeListener(_checkRequiredFields);
+    _typeController.removeListener(_checkRequiredFields);
+
+    _productsWorker?.dispose();
     _nameController.dispose();
     _descriptionController.dispose();
     _priceController.dispose();
@@ -181,11 +249,15 @@ class _AddProductPageState extends State<AddProductPage> {
     _priceFocus.dispose();
     _stockFocus.dispose();
     _descFocus.dispose();
+    _sectionFocus.dispose();
+    _subCategoryFocus.dispose();
+    _typeFocus.dispose();
+    _flavorFocus.dispose();
     super.dispose();
   }
 
   // ═══════════════════════════════════════════════════════════════
-  //  المنطق البرمجي (محفوظ بالكامل بدون تغيير)
+  //  المنطق البرمجي
   // ═══════════════════════════════════════════════════════════════
 
   Future<void> _pickMultipleImages() async {
@@ -207,7 +279,7 @@ class _AddProductPageState extends State<AddProductPage> {
         }
       }
     } catch (e) {
-      print('❌ Error picking multiple images: $e');
+      debugPrint('❌ Error picking multiple images: $e');
     }
   }
 
@@ -217,7 +289,8 @@ class _AddProductPageState extends State<AddProductPage> {
           .get('custom_categories_data', defaultValue: <Map>[]);
       if (savedData is List) {
         _allCategories = savedData
-            .map((j) => CustomCategory.fromJson(Map<String, dynamic>.from(j)))
+            .map((j) =>
+            CustomCategory.fromJson(Map<String, dynamic>.from(j)))
             .toList();
       }
     } catch (e) {
@@ -225,7 +298,7 @@ class _AddProductPageState extends State<AddProductPage> {
     }
   }
 
-  void _loadLocalAndCloudSuggestions() async {
+  Future<void> _loadLocalAndCloudSuggestions() async {
     final sections = <String>{};
     final subCategories = <String>{};
     final types = <String>{};
@@ -233,73 +306,117 @@ class _AddProductPageState extends State<AddProductPage> {
     final names = <String>{};
 
     for (var cat in _allCategories) {
-      sections.add(cat.name);
+      if (cat.name.trim().isNotEmpty) sections.add(cat.name.trim());
       for (var sub in cat.subCategories) {
-        subCategories.add(sub.name);
+        if (sub.name.trim().isNotEmpty) {
+          subCategories.add(sub.name.trim());
+        }
         if (sub.subCategories != null) {
           for (var type in sub.subCategories!) {
-            types.add(type.name);
+            if (type.name.trim().isNotEmpty) types.add(type.name.trim());
           }
         }
         if (sub.flavors != null) {
           for (var flavor in sub.flavors!) {
-            flavors.add(flavor.name);
+            if (flavor.name.trim().isNotEmpty) {
+              flavors.add(flavor.name.trim());
+            }
           }
         }
       }
     }
 
-    for (var p in _productController.products) {
-      names.add(p.name);
-      if (p.category.isNotEmpty) {
-        types.add(p.category);
+    try {
+      for (var p in _productController.products) {
+        if (p.name.trim().isNotEmpty) names.add(p.name.trim());
+        if (p.category.trim().isNotEmpty) types.add(p.category.trim());
+        if (p.flavor != null && p.flavor!.trim().isNotEmpty) {
+          flavors.add(p.flavor!.trim());
+        }
       }
-      if (p.flavor != null && p.flavor!.isNotEmpty) {
-        flavors.add(p.flavor!);
-      }
-    }
-
-    if (mounted) {
-      setState(() {
-        _sectionSuggestions = sections.toList()..sort();
-        _subCategorySuggestions = subCategories.toList()..sort();
-        _typeSuggestions = types.toList()..sort();
-        _flavorSuggestions = flavors.toList()..sort();
-        _nameSuggestions = names.toList()..sort();
-      });
+    } catch (e) {
+      debugPrint('⚠️ productController read error: $e');
     }
 
     try {
-      final snapshot =
-      await FirebaseFirestore.instance.collection('products').get();
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
-        if (data['name'] != null) names.add(data['name'].toString());
-        if (data['category'] != null) types.add(data['category'].toString());
-        if (data['flavor'] != null &&
-            data['flavor'].toString().isNotEmpty) {
-          flavors.add(data['flavor'].toString());
+      if (Hive.isBoxOpen('products')) {
+        final box = Hive.box('products');
+        for (var key in box.keys) {
+          final data = box.get(key);
+          if (data is Map) {
+            if (data['name'] != null &&
+                data['name'].toString().trim().isNotEmpty) {
+              names.add(data['name'].toString().trim());
+            }
+            if (data['category'] != null &&
+                data['category'].toString().trim().isNotEmpty) {
+              types.add(data['category'].toString().trim());
+            }
+            if (data['flavor'] != null &&
+                data['flavor'].toString().trim().isNotEmpty) {
+              flavors.add(data['flavor'].toString().trim());
+            }
+          }
         }
       }
-
-      if (mounted) {
-        setState(() {
-          _sectionSuggestions = sections.toList()..sort();
-          _subCategorySuggestions = subCategories.toList()..sort();
-          _typeSuggestions = types.toList()..sort();
-          _flavorSuggestions = flavors.toList()..sort();
-          _nameSuggestions = names.toList()..sort();
-        });
-      }
     } catch (e) {
-      debugPrint('Error loading cloud suggestions: $e');
+      debugPrint('⚠️ Hive products read error: $e');
     }
+
+    _applySuggestions(sections, subCategories, types, flavors, names);
+
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('products')
+          .limit(500)
+          .get();
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        if (data['name'] != null &&
+            data['name'].toString().trim().isNotEmpty) {
+          names.add(data['name'].toString().trim());
+        }
+        if (data['category'] != null &&
+            data['category'].toString().trim().isNotEmpty) {
+          types.add(data['category'].toString().trim());
+        }
+        if (data['flavor'] != null &&
+            data['flavor'].toString().trim().isNotEmpty) {
+          flavors.add(data['flavor'].toString().trim());
+        }
+      }
+      _applySuggestions(sections, subCategories, types, flavors, names);
+    } catch (e) {
+      debugPrint('⚠️ Cloud suggestions error: $e');
+    }
+  }
+
+  void _applySuggestions(
+      Set<String> sections,
+      Set<String> subCategories,
+      Set<String> types,
+      Set<String> flavors,
+      Set<String> names,
+      ) {
+    if (!mounted) return;
+    setState(() {
+      _sectionSuggestions =
+      sections.where((s) => s.isNotEmpty).toList()..sort();
+      _subCategorySuggestions =
+      subCategories.where((s) => s.isNotEmpty).toList()..sort();
+      _typeSuggestions =
+      types.where((s) => s.isNotEmpty).toList()..sort();
+      _flavorSuggestions =
+      flavors.where((s) => s.isNotEmpty).toList()..sort();
+      _nameSuggestions =
+      names.where((s) => s.isNotEmpty).toList()..sort();
+    });
   }
 
   void _loadRecentProducts() {
     _recentProducts = _productController.products.toList()
-      ..sort((a, b) => b.id.compareTo(a.id));
-    setState(() {});
+      ..sort((a, b) => (b.id ?? '').compareTo(a.id ?? ''));
+    if (mounted) setState(() {});
   }
 
   Future<void> _showRecentProducts() async {
@@ -316,7 +433,6 @@ class _AddProductPageState extends State<AddProductPage> {
           ),
           child: Column(
             children: [
-              // مقبض السحب
               Container(
                 width: 40,
                 height: 4,
@@ -352,8 +468,17 @@ class _AddProductPageState extends State<AddProductPage> {
                 ),
               ),
               Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: _recentProducts.isEmpty
+                    ? Center(
+                  child: Text(
+                    'no_products'.tr,
+                    style: GoogleFonts.cairo(
+                        color: Colors.grey.shade600),
+                  ),
+                )
+                    : ListView.builder(
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 12),
                   itemCount: _recentProducts.length,
                   itemBuilder: (context, index) {
                     final p = _recentProducts[index];
@@ -368,7 +493,8 @@ class _AddProductPageState extends State<AddProductPage> {
                       child: ListTile(
                         leading: p.imagePath.isNotEmpty
                             ? ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius:
+                          BorderRadius.circular(10),
                           child: ImageHelper.displayImage(
                             imagePath: p.imagePath,
                             width: 50,
@@ -381,17 +507,21 @@ class _AddProductPageState extends State<AddProductPage> {
                           height: 50,
                           decoration: BoxDecoration(
                             gradient: _Lux.royalGold,
-                            borderRadius: BorderRadius.circular(10),
+                            borderRadius:
+                            BorderRadius.circular(10),
                           ),
-                          child: const Icon(Icons.image_rounded,
+                          child: const Icon(
+                              Icons.image_rounded,
                               color: Colors.white),
                         ),
                         title: Text(p.name,
                             style: GoogleFonts.cairo(
-                                fontWeight: FontWeight.bold, fontSize: 14)),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14)),
                         subtitle: Text(p.category,
                             style: GoogleFonts.cairo(
-                                fontSize: 12, color: Colors.grey.shade600)),
+                                fontSize: 12,
+                                color: Colors.grey.shade600)),
                         trailing: Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 10, vertical: 5),
@@ -437,6 +567,8 @@ class _AddProductPageState extends State<AddProductPage> {
             ? selectedProduct.imagePath
             : null;
       });
+      // ✅ تحقق فوري بعد الملء
+      _checkRequiredFields();
     }
   }
 
@@ -470,154 +602,204 @@ class _AddProductPageState extends State<AddProductPage> {
 
   Future<void> _saveProduct() async {
     if (!_formKey.currentState!.validate()) return;
+
+    final price = double.tryParse(_priceController.text.trim());
+    if (price == null || price <= 0) {
+      Get.snackbar(
+        'error'.tr,
+        'price_invalid'.tr,
+        backgroundColor: _Lux.ruby,
+        colorText: Colors.white,
+      );
+      return;
+    }
+
     setState(() => _isSaving = true);
 
-    String imagePath =
-        _selectedImagePath ?? 'assets/images/product_placeholder.png';
-
-    if (imagePath.startsWith('data:image')) {
-      final imageService = ImageUploadService();
-      final bytes = base64Decode(imagePath.split(',').last);
-      final uploadedUrl = await imageService.uploadBytes(
-        bytes: bytes,
-        fileName: 'product_${DateTime.now().millisecondsSinceEpoch}.jpg',
-        folder: 'products',
-      );
-      if (uploadedUrl != null) {
-        imagePath = uploadedUrl;
-      }
-    }
-
-    final additionalImages = await _uploadAdditionalImages();
-    final mainImage = additionalImages.isNotEmpty
-        ? additionalImages.first
-        : (_selectedImagePath ?? 'assets/images/product_placeholder.png');
-
-    final product = Product(
-      id: widget.product?.id,
-      name: _nameController.text.trim(),
-      description: _descriptionController.text.trim(),
-      price: double.parse(_priceController.text.trim()),
-      category: _typeController.text.trim().isNotEmpty
-          ? _typeController.text.trim()
-          : (widget.categoryName ?? 'general'.tr),
-      imagePath: mainImage,
-      isAvailable: true,
-      stock: int.tryParse(_stockController.text.trim()) ?? 0,
-      rating: widget.product?.rating ?? 0.0,
-      reviewCount: widget.product?.reviewCount ?? 0,
-      flavor: _flavorController.text.trim().isNotEmpty
-          ? _flavorController.text.trim()
-          : null,
-      hasMultipleSizes: _hasMultipleSizes,
-      sizes: _hasMultipleSizes ? _sizes : null,
-      additionalImages: additionalImages,
-    );
-
-    if (widget.product != null) {
-      _productController.updateProduct(product);
-    } else {
-      _productController.addProduct(product);
-    }
-
     try {
-      await FirebaseFirestore.instance
-          .collection('products')
-          .doc(product.id)
-          .set({
-        'name': product.name,
-        'price': product.price,
-        'category': product.category,
-        'description': product.description,
-        'imagePath': imagePath,
-        'flavor': product.flavor,
-        'stock': product.stock,
-        'storeId': _getStoreId(),
-      }, SetOptions(merge: true));
-    } catch (e) {
-      print('❌ Error saving to cloud: $e');
-    }
+      String mainImage =
+          _selectedImagePath ?? 'assets/images/product_placeholder.png';
 
-    if (product.flavor != null && product.flavor!.isNotEmpty) {
-      _addFlavorToCategory(product.category, product.flavor!);
-    }
+      if (mainImage.startsWith('data:image')) {
+        final bytes = base64Decode(mainImage.split(',').last);
+        final uploadedUrl = await ImageUploadService().uploadBytes(
+          bytes: bytes,
+          fileName:
+          'product_${DateTime.now().millisecondsSinceEpoch}_main.jpg',
+          folder: 'products',
+        );
+        if (uploadedUrl != null) mainImage = uploadedUrl;
+      }
 
-    setState(() => _isSaving = false);
+      final additionalImages = <String>[];
+      for (final img in _selectedImages) {
+        if (img == _selectedImagePath) continue;
 
-    final addAnother = await Get.dialog<bool>(
-      AlertDialog(
-        shape:
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-        title: Row(
-          children: [
+        if (img.startsWith('data:image')) {
+          final bytes = base64Decode(img.split(',').last);
+          final url = await ImageUploadService().uploadBytes(
+            bytes: bytes,
+            fileName:
+            'product_${DateTime.now().millisecondsSinceEpoch}_${additionalImages.length}.jpg',
+            folder: 'products',
+          );
+          if (url != null) additionalImages.add(url);
+        } else if (img.startsWith('http')) {
+          additionalImages.add(img);
+        }
+      }
+
+      final productId = widget.product?.id ??
+          FirebaseFirestore.instance.collection('products').doc().id;
+
+      final product = Product(
+        id: productId,
+        name: _nameController.text.trim(),
+        description: _descriptionController.text.trim(),
+        price: price,
+        category: _typeController.text.trim().isNotEmpty
+            ? _typeController.text.trim()
+            : (widget.product?.category ??
+            widget.categoryName ??
+            'general'.tr),
+        imagePath: mainImage,
+        isAvailable: true,
+        stock: int.tryParse(_stockController.text.trim()) ?? 0,
+        rating: widget.product?.rating ?? 0.0,
+        reviewCount: widget.product?.reviewCount ?? 0,
+        flavor: _flavorController.text.trim().isNotEmpty
+            ? _flavorController.text.trim()
+            : null,
+        hasMultipleSizes: _hasMultipleSizes,
+        sizes: _hasMultipleSizes ? _sizes : null,
+        additionalImages: additionalImages,
+      );
+
+      if (widget.product != null) {
+        await _productController.updateProduct(product);
+      } else {
+        await _productController.addProduct(product);
+      }
+
+      try {
+        await FirebaseFirestore.instance
+            .collection('products')
+            .doc(productId)
+            .set({
+          'name': product.name,
+          'price': product.price,
+          'category': product.category,
+          'description': product.description,
+          'imagePath': mainImage,
+          'additionalImages': additionalImages,
+          'flavor': product.flavor,
+          'stock': product.stock,
+          'storeId': _getStoreId(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } catch (e) {
+        debugPrint('❌ Error saving to cloud: $e');
+      }
+
+      if (product.flavor != null && product.flavor!.isNotEmpty) {
+        _addFlavorToCategory(product.category, product.flavor!);
+      }
+
+      await _loadLocalAndCloudSuggestions();
+
+      if (!mounted) return;
+      setState(() => _isSaving = false);
+
+      final addAnother = await Get.dialog<bool>(
+        AlertDialog(
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  gradient: _Lux.royalGold,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.check_rounded,
+                    color: Colors.white, size: 18),
+              ),
+              const SizedBox(width: 10),
+              Text('saved_successfully'.tr,
+                  style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: Text('add_another_product'.tr,
+              style: GoogleFonts.cairo(fontSize: 14)),
+          actions: [
+            TextButton(
+              onPressed: () => Get.back(result: false),
+              child: Text('no'.tr,
+                  style: GoogleFonts.cairo(color: Colors.grey)),
+            ),
             Container(
-              padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 gradient: _Lux.royalGold,
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(Icons.check_rounded,
-                  color: Colors.white, size: 18),
+              child: ElevatedButton(
+                onPressed: () => Get.back(result: true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.transparent,
+                  shadowColor: Colors.transparent,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 20, vertical: 10),
+                ),
+                child: Text('yes'.tr,
+                    style: GoogleFonts.cairo(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold)),
+              ),
             ),
-            const SizedBox(width: 10),
-            Text('saved_successfully'.tr,
-                style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
           ],
         ),
-        content: Text('add_another_product'.tr,
-            style: GoogleFonts.cairo(fontSize: 14)),
-        actions: [
-          TextButton(
-            onPressed: () => Get.back(result: false),
-            child: Text('no'.tr,
-                style: GoogleFonts.cairo(color: Colors.grey)),
-          ),
-          Container(
-            decoration: BoxDecoration(
-              gradient: _Lux.royalGold,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: ElevatedButton(
-              onPressed: () => Get.back(result: true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.transparent,
-                shadowColor: Colors.transparent,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 20, vertical: 10),
-              ),
-              child: Text('yes'.tr,
-                  style: GoogleFonts.cairo(
-                      color: Colors.white, fontWeight: FontWeight.bold)),
-            ),
-          ),
-        ],
-      ),
-    );
+      );
 
-    if (addAnother == true) {
-      setState(() {
-        _nameController.clear();
-        _descriptionController.clear();
-        _priceController.clear();
-        _stockController.clear();
-        _flavorController.clear();
-        _selectedImagePath = null;
-        _selectedImages.clear();
-      });
-    } else {
-      Get.back();
+      if (addAnother == true) {
+        setState(() {
+          _nameController.clear();
+          _descriptionController.clear();
+          _priceController.clear();
+          _stockController.clear();
+          _flavorController.clear();
+          _selectedImagePath = null;
+          _selectedImages.clear();
+          _imagesExpanded = true;
+          _showSaveButton = false; // ✅ أخفِ الزر
+        });
+      } else {
+        Get.back();
+      }
+    } catch (e) {
+      debugPrint('❌ Save error: $e');
+      if (mounted) {
+        setState(() => _isSaving = false);
+        Get.snackbar(
+          'error'.tr,
+          'save_failed'.tr,
+          backgroundColor: _Lux.ruby,
+          colorText: Colors.white,
+        );
+      }
     }
   }
 
   void _addFlavorToCategory(String typeName, String flavorName) {
     final settingsBox = Hive.box('settings');
-    final savedData = settingsBox.get('custom_categories_data',
-        defaultValue: <Map>[]);
+    final savedData =
+    settingsBox.get('custom_categories_data', defaultValue: <Map>[]);
     if (savedData is List) {
       final allCats = savedData
-          .map((j) => CustomCategory.fromJson(Map<String, dynamic>.from(j)))
+          .map((j) =>
+          CustomCategory.fromJson(Map<String, dynamic>.from(j)))
           .toList();
 
       bool updated = false;
@@ -628,9 +810,8 @@ class _AddProductPageState extends State<AddProductPage> {
             for (var type in sub.subCategories!) {
               if (type.name == typeName) {
                 type.flavors ??= [];
-                final exists = type.flavors!.any(
-                      (f) => f.name.toLowerCase() == flavorName.toLowerCase(),
-                );
+                final exists = type.flavors!.any((f) =>
+                f.name.toLowerCase() == flavorName.toLowerCase());
                 if (!exists) {
                   type.flavors!.add(Flavor(name: flavorName));
                   updated = true;
@@ -641,9 +822,9 @@ class _AddProductPageState extends State<AddProductPage> {
                 for (var subType in type.subCategories!) {
                   if (subType.name == typeName) {
                     subType.flavors ??= [];
-                    final exists = subType.flavors!.any(
-                          (f) => f.name.toLowerCase() == flavorName.toLowerCase(),
-                    );
+                    final exists = subType.flavors!.any((f) =>
+                    f.name.toLowerCase() ==
+                        flavorName.toLowerCase());
                     if (!exists) {
                       subType.flavors!.add(Flavor(name: flavorName));
                       updated = true;
@@ -705,8 +886,17 @@ class _AddProductPageState extends State<AddProductPage> {
                 ),
               ),
               Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: items.isEmpty
+                    ? Center(
+                  child: Text(
+                    'no_suggestions'.tr,
+                    style: GoogleFonts.cairo(
+                        color: Colors.grey.shade600),
+                  ),
+                )
+                    : ListView.builder(
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 12),
                   itemCount: items.length,
                   itemBuilder: (context, index) {
                     final item = items[index];
@@ -717,14 +907,24 @@ class _AddProductPageState extends State<AddProductPage> {
                           color: _Lux.gold.withOpacity(0.15),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Icon(Icons.check_circle_outline,
-                            size: 18, color: _Lux.goldDeep),
+                        child: const Icon(
+                            Icons.check_circle_outline,
+                            size: 18,
+                            color: _Lux.goldDeep),
                       ),
                       title: Text(item,
-                          style: GoogleFonts.cairo(fontSize: 14)),
+                          style:
+                          GoogleFonts.cairo(fontSize: 14)),
                       onTap: () {
                         controller.text = item;
+                        controller.selection =
+                            TextSelection.fromPosition(
+                              TextPosition(
+                                  offset: controller.text.length),
+                            );
                         Navigator.pop(ctx);
+                        _checkRequiredFields(); // ✅
+                        if (mounted) setState(() {});
                       },
                     );
                   },
@@ -735,25 +935,6 @@ class _AddProductPageState extends State<AddProductPage> {
         );
       },
     );
-  }
-
-  Future<List<String>> _uploadAdditionalImages() async {  // ✅ List<String>
-    final uploadedUrls = <String>[];
-    for (var img in _selectedImages) {
-      if (img.startsWith('data:image')) {
-        final imageService = ImageUploadService();
-        final bytes = base64Decode(img.split(',').last);
-        final url = await imageService.uploadBytes(
-          bytes: bytes,
-          fileName: 'product_${DateTime.now().millisecondsSinceEpoch}.jpg',
-          folder: 'products',
-        );
-        uploadedUrls.add(url ?? img);
-      } else {
-        uploadedUrls.add(img);
-      }
-    }
-    return uploadedUrls;
   }
 
   Future<void> _pickImage() async {
@@ -866,10 +1047,14 @@ class _AddProductPageState extends State<AddProductPage> {
       final XFile? img = await _picker.pickImage(
           source: ImageSource.camera, imageQuality: 80);
       if (img != null && mounted) {
-        setState(() => _selectedImagePath = img.path);
+        final bytes = await img.readAsBytes();
+        final base64Image = base64Encode(bytes);
+        setState(() {
+          _selectedImagePath = 'data:image/jpeg;base64,$base64Image';
+        });
       }
     } catch (e) {
-      print('❌ Error: $e');
+      debugPrint('❌ Error: $e');
     }
   }
 
@@ -885,12 +1070,12 @@ class _AddProductPageState extends State<AddProductPage> {
         });
       }
     } catch (e) {
-      print('❌ Error: $e');
+      debugPrint('❌ Error: $e');
     }
   }
 
   // ═══════════════════════════════════════════════════════════════
-  //  🎨 البناء الجديد للواجهة
+  //  🎨 البناء
   // ═══════════════════════════════════════════════════════════════
 
   @override
@@ -923,45 +1108,45 @@ class _AddProductPageState extends State<AddProductPage> {
                     _buildLuxField(
                       label: 'section'.tr,
                       controller: _sectionController,
+                      focusNode: _sectionFocus,
                       hint: 'select_section'.tr,
                       icon: Icons.folder_rounded,
                       iconColor: _Lux.violet,
                       suggestions: _sectionSuggestions,
                       isDark: isDark,
-                      textInputAction: TextInputAction.next,
                     ),
                     const SizedBox(height: 12),
                     _buildLuxField(
                       label: 'sub_category'.tr,
                       controller: _subCategoryController,
+                      focusNode: _subCategoryFocus,
                       hint: 'select_sub_category'.tr,
                       icon: Icons.folder_open_rounded,
                       iconColor: _Lux.sapphire,
                       suggestions: _subCategorySuggestions,
                       isDark: isDark,
-                      textInputAction: TextInputAction.next,
                     ),
                     const SizedBox(height: 12),
                     _buildLuxField(
                       label: 'type_size'.tr,
                       controller: _typeController,
+                      focusNode: _typeFocus,
                       hint: 'select_type'.tr,
                       icon: Icons.category_rounded,
                       iconColor: _Lux.amber,
                       suggestions: _typeSuggestions,
                       isDark: isDark,
-                      textInputAction: TextInputAction.next,
                     ),
                     const SizedBox(height: 12),
                     _buildLuxField(
                       label: 'flavor'.tr,
                       controller: _flavorController,
+                      focusNode: _flavorFocus,
                       hint: 'select_flavor'.tr,
                       icon: Icons.local_drink_rounded,
                       iconColor: _Lux.emerald,
                       suggestions: _flavorSuggestions,
                       isDark: isDark,
-                      textInputAction: TextInputAction.next,
                     ),
                     const SizedBox(height: 24),
                     _buildSectionTitle(
@@ -974,13 +1159,12 @@ class _AddProductPageState extends State<AddProductPage> {
                     _buildLuxField(
                       label: 'product_name'.tr,
                       controller: _nameController,
+                      focusNode: _nameFocus,
                       hint: 'product_name'.tr,
                       icon: Icons.shopping_bag_rounded,
                       iconColor: _Lux.gold,
                       suggestions: _nameSuggestions,
                       isDark: isDark,
-                      focusNode: _nameFocus,
-                      textInputAction: TextInputAction.next,
                       validator: (v) => v == null || v.trim().isEmpty
                           ? 'required_field'.tr
                           : null,
@@ -990,13 +1174,12 @@ class _AddProductPageState extends State<AddProductPage> {
                     _buildLuxField(
                       label: 'product_description'.tr,
                       controller: _descriptionController,
+                      focusNode: _descFocus,
                       hint: 'product_description'.tr,
                       icon: Icons.description_rounded,
                       iconColor: _Lux.violet,
                       suggestions: const [],
                       isDark: isDark,
-                      focusNode: _descFocus,
-                      textInputAction: TextInputAction.next,
                       maxLines: 3,
                     ),
                     const SizedBox(height: 24),
@@ -1013,19 +1196,25 @@ class _AddProductPageState extends State<AddProductPage> {
                           child: _buildLuxField(
                             label: 'price'.tr,
                             controller: _priceController,
+                            focusNode: _priceFocus,
                             hint: '0.00',
                             icon: Icons.attach_money_rounded,
                             iconColor: _Lux.emerald,
                             suggestions: const [],
                             isDark: isDark,
-                            focusNode: _priceFocus,
-                            textInputAction: TextInputAction.next,
                             keyboardType:
                             const TextInputType.numberWithOptions(
                                 decimal: true),
-                            validator: (v) => v == null || v.trim().isEmpty
-                                ? 'required_field'.tr
-                                : null,
+                            validator: (v) {
+                              if (v == null || v.trim().isEmpty) {
+                                return 'required_field'.tr;
+                              }
+                              final n = double.tryParse(v.trim());
+                              if (n == null || n <= 0) {
+                                return 'price_invalid'.tr;
+                              }
+                              return null;
+                            },
                             isRequired: true,
                             suffix: _currency,
                           ),
@@ -1035,12 +1224,12 @@ class _AddProductPageState extends State<AddProductPage> {
                           child: _buildLuxField(
                             label: 'stock'.tr,
                             controller: _stockController,
+                            focusNode: _stockFocus,
                             hint: '0',
                             icon: Icons.inventory_2_rounded,
                             iconColor: _Lux.amber,
                             suggestions: const [],
                             isDark: isDark,
-                            focusNode: _stockFocus,
                             textInputAction: TextInputAction.done,
                             keyboardType: TextInputType.number,
                           ),
@@ -1055,14 +1244,13 @@ class _AddProductPageState extends State<AddProductPage> {
           ],
         ),
       ),
-      // زر الحفظ العائم
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: _buildSaveButton(isDark),
     );
   }
 
   // ═══════════════════════════════════════════════════════════════
-  //  🎯 الهيدر الفاخر
+  //  🎯 الهيدر
   // ═══════════════════════════════════════════════════════════════
 
   Widget _buildHeader(bool isDark) {
@@ -1196,7 +1384,7 @@ class _AddProductPageState extends State<AddProductPage> {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  //  🖼️ قسم الصور (قابل للطي)
+  //  🖼️ قسم الصور
   // ═══════════════════════════════════════════════════════════════
 
   Widget _buildImagesSection(bool isDark) {
@@ -1219,9 +1407,9 @@ class _AddProductPageState extends State<AddProductPage> {
       ),
       child: Column(
         children: [
-          // رأس قابل للنقر
           InkWell(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+            borderRadius:
+            const BorderRadius.vertical(top: Radius.circular(22)),
             onTap: () =>
                 setState(() => _imagesExpanded = !_imagesExpanded),
             child: Padding(
@@ -1255,7 +1443,7 @@ class _AddProductPageState extends State<AddProductPage> {
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
-                      '${_selectedImages.length}',
+                      '${_selectedImages.length + (_selectedImagePath != null ? 1 : 0)}',
                       style: GoogleFonts.cairo(
                         color: _Lux.goldDeep,
                         fontSize: 11,
@@ -1269,14 +1457,14 @@ class _AddProductPageState extends State<AddProductPage> {
                     turns: _imagesExpanded ? 0.5 : 0,
                     child: Icon(
                       Icons.keyboard_arrow_down_rounded,
-                      color: isDark ? Colors.white54 : Colors.grey.shade600,
+                      color:
+                      isDark ? Colors.white54 : Colors.grey.shade600,
                     ),
                   ),
                 ],
               ),
             ),
           ),
-          // المحتوى
           AnimatedCrossFade(
             duration: const Duration(milliseconds: 280),
             crossFadeState: _imagesExpanded
@@ -1325,7 +1513,6 @@ class _AddProductPageState extends State<AddProductPage> {
           border: Border.all(
             color: _Lux.gold.withOpacity(0.30),
             width: 1.5,
-            style: BorderStyle.solid,
           ),
         ),
         child: _selectedImagePath != null
@@ -1339,10 +1526,10 @@ class _AddProductPageState extends State<AddProductPage> {
                 width: double.infinity,
                 height: double.infinity,
                 fit: BoxFit.cover,
-                errorWidget: const Icon(Icons.broken_image, size: 50),
+                errorWidget:
+                const Icon(Icons.broken_image, size: 50),
               ),
             ),
-            // تدرج سفلي للقراءة
             Positioned(
               left: 0,
               right: 0,
@@ -1414,10 +1601,8 @@ class _AddProductPageState extends State<AddProductPage> {
                   ),
                 ],
               ),
-              child: const Icon(
-                  Icons.add_photo_alternate_rounded,
-                  color: Colors.white,
-                  size: 28),
+              child: const Icon(Icons.add_photo_alternate_rounded,
+                  color: Colors.white, size: 28),
             ),
             const SizedBox(height: 10),
             Text(
@@ -1488,11 +1673,12 @@ class _AddProductPageState extends State<AddProductPage> {
                   child: GestureDetector(
                     onTap: () {
                       setState(() {
-                        _selectedImages.removeAt(index);
-                        if (_selectedImages.isNotEmpty) {
-                          _selectedImagePath = _selectedImages.first;
-                        } else {
-                          _selectedImagePath = null;
+                        final removed = _selectedImages.removeAt(index);
+                        if (removed == _selectedImagePath) {
+                          _selectedImagePath =
+                          _selectedImages.isNotEmpty
+                              ? _selectedImages.first
+                              : null;
                         }
                       });
                     },
@@ -1555,7 +1741,7 @@ class _AddProductPageState extends State<AddProductPage> {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  //  🎨 حقل إدخال فاخر موحّد
+  //  🎨 حقل إدخال فاخر مع RawAutocomplete
   // ═══════════════════════════════════════════════════════════════
 
   Widget _buildLuxField({
@@ -1574,6 +1760,9 @@ class _AddProductPageState extends State<AddProductPage> {
     int maxLines = 1,
     String? suffix,
   }) {
+    final effectiveFocus = focusNode ?? FocusNode();
+    final showAutocomplete = suggestions.isNotEmpty && maxLines == 1;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1597,7 +1786,7 @@ class _AddProductPageState extends State<AddProductPage> {
                 Container(
                   width: 5,
                   height: 5,
-                  decoration: BoxDecoration(
+                  decoration: const BoxDecoration(
                     color: _Lux.ruby,
                     shape: BoxShape.circle,
                   ),
@@ -1606,11 +1795,14 @@ class _AddProductPageState extends State<AddProductPage> {
             ],
           ),
         ),
-        // الحقل
-        suggestions.isNotEmpty && maxLines == 1
-            ? Autocomplete<String>(
+
+        showAutocomplete
+            ? RawAutocomplete<String>(
+          textEditingController: controller,
+          focusNode: effectiveFocus,
           optionsBuilder: (TextEditingValue textEditingValue) {
-            final query = textEditingValue.text.trim().toLowerCase();
+            final query =
+            textEditingValue.text.trim().toLowerCase();
             if (query.isEmpty) return suggestions;
             final startsWith = suggestions
                 .where((s) => s.toLowerCase().startsWith(query))
@@ -1622,15 +1814,20 @@ class _AddProductPageState extends State<AddProductPage> {
                 .toList();
             return [...startsWith, ...contains];
           },
-          onSelected: (value) => controller.text = value,
-          fieldViewBuilder: (context, textEditingController,
-              focusNodeAuto, onFieldSubmitted) {
-            if (textEditingController.text != controller.text) {
-              textEditingController.text = controller.text;
-            }
+          onSelected: (value) {
+            controller.text = value;
+            controller.selection =
+                TextSelection.fromPosition(
+                  TextPosition(offset: controller.text.length),
+                );
+            _checkRequiredFields(); // ✅
+            if (mounted) setState(() {});
+          },
+          fieldViewBuilder: (context, textController, fNode,
+              onFieldSubmitted) {
             return _buildFieldDecoration(
-              controller: textEditingController,
-              focusNode: focusNode ?? focusNodeAuto,
+              controller: textController,
+              focusNode: fNode,
               hint: hint,
               isDark: isDark,
               iconColor: iconColor,
@@ -1639,22 +1836,69 @@ class _AddProductPageState extends State<AddProductPage> {
               validator: validator,
               maxLines: maxLines,
               suffix: suffix,
-              onChanged: (v) => controller.text = v,
+              onChanged: (_) {},
               suffixIcon: IconButton(
                 icon: Icon(
                   Icons.arrow_drop_down_circle_rounded,
                   color: iconColor,
                   size: 22,
                 ),
-                onPressed: () =>
-                    _showSelectionList(label, suggestions, controller),
+                onPressed: () => _showSelectionList(
+                    label, suggestions, controller),
+              ),
+            );
+          },
+          optionsViewBuilder: (context, onSelected, options) {
+            return Align(
+              alignment: Alignment.topLeft,
+              child: Material(
+                elevation: 8,
+                borderRadius: BorderRadius.circular(14),
+                color: isDark ? _Lux.navyCard : Colors.white,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                      maxHeight: 220, maxWidth: 400),
+                  child: ListView.builder(
+                    padding: EdgeInsets.zero,
+                    shrinkWrap: true,
+                    itemCount: options.length,
+                    itemBuilder: (context, index) {
+                      final option = options.elementAt(index);
+                      return InkWell(
+                        onTap: () => onSelected(option),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 12),
+                          child: Row(
+                            children: [
+                              Icon(Icons.history_rounded,
+                                  size: 16, color: iconColor),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  option,
+                                  style: GoogleFonts.cairo(
+                                    fontSize: 13,
+                                    color: isDark
+                                        ? Colors.white
+                                        : _Lux.midnight,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
               ),
             );
           },
         )
             : _buildFieldDecoration(
           controller: controller,
-          focusNode: focusNode,
+          focusNode: effectiveFocus,
           hint: hint,
           isDark: isDark,
           iconColor: iconColor,
@@ -1731,11 +1975,11 @@ class _AddProductPageState extends State<AddProductPage> {
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: _Lux.ruby, width: 1.2),
+          borderSide: const BorderSide(color: _Lux.ruby, width: 1.2),
         ),
         focusedErrorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: _Lux.ruby, width: 1.6),
+          borderSide: const BorderSide(color: _Lux.ruby, width: 1.6),
         ),
         suffixIcon: suffixIcon ??
             (suffix != null
@@ -1761,68 +2005,83 @@ class _AddProductPageState extends State<AddProductPage> {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  //  💾 زر الحفظ العائم
+  //  💾 زر الحفظ العائم — يظهر عند اكتمال الحقول الرئيسية
   // ═══════════════════════════════════════════════════════════════
 
   Widget _buildSaveButton(bool isDark) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      width: double.infinity,
-      height: 58,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: _Lux.gold.withOpacity(0.40),
-            blurRadius: 22,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: ElevatedButton(
-        onPressed: _isSaving ? null : _saveProduct,
-        style: ElevatedButton.styleFrom(
-          padding: EdgeInsets.zero,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18)),
-          elevation: 0,
-          backgroundColor: Colors.transparent,
-        ),
-        child: Ink(
-          decoration: BoxDecoration(
-            gradient: _isSaving
-                ? LinearGradient(
-                colors: [Colors.grey.shade400, Colors.grey.shade600])
-                : _Lux.royalGold,
-            borderRadius: BorderRadius.circular(18),
-          ),
+    return AnimatedSlide(
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+      offset: _showSaveButton ? Offset.zero : const Offset(0, 1.6),
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOut,
+        opacity: _showSaveButton ? 1.0 : 0.0,
+        child: IgnorePointer(
+          ignoring: !_showSaveButton,
           child: Container(
-            alignment: Alignment.center,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (_isSaving)
-                  const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
-                      strokeWidth: 2.5,
-                    ),
-                  )
-                else
-                  const Icon(Icons.save_rounded,
-                      color: Colors.white, size: 22),
-                const SizedBox(width: 10),
-                Text(
-                  _isSaving ? 'saving'.tr : 'save_product'.tr,
-                  style: GoogleFonts.cairo(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                  ),
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            width: double.infinity,
+            height: 58,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: [
+                BoxShadow(
+                  color: _Lux.gold.withOpacity(0.40),
+                  blurRadius: 22,
+                  offset: const Offset(0, 10),
                 ),
               ],
+            ),
+            child: ElevatedButton(
+              onPressed: _isSaving ? null : _saveProduct,
+              style: ElevatedButton.styleFrom(
+                padding: EdgeInsets.zero,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18)),
+                elevation: 0,
+                backgroundColor: Colors.transparent,
+              ),
+              child: Ink(
+                decoration: BoxDecoration(
+                  gradient: _isSaving
+                      ? LinearGradient(colors: [
+                    Colors.grey.shade400,
+                    Colors.grey.shade600
+                  ])
+                      : _Lux.royalGold,
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Container(
+                  alignment: Alignment.center,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (_isSaving)
+                        const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2.5,
+                          ),
+                        )
+                      else
+                        const Icon(Icons.save_rounded,
+                            color: Colors.white, size: 22),
+                      const SizedBox(width: 10),
+                      Text(
+                        _isSaving ? 'saving'.tr : 'save_product'.tr,
+                        style: GoogleFonts.cairo(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         ),

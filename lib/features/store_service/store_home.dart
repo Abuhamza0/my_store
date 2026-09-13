@@ -607,7 +607,7 @@ class _StoreServiceHomeState extends State<StoreServiceHome>
         onTap: () => Get.to(() => const CustomerListPage()),
       ),
       _MainActionCard(
-        title: 'add_products_card'.tr,
+        title: 'manage_products_card'.tr,
         subtitle: 'browse_sections'.tr,
         icon: Icons.inventory_2_rounded,
         color: _Lux.emerald,
@@ -1135,7 +1135,7 @@ class _StoreServiceHomeState extends State<StoreServiceHome>
               item.color2Value,
             ],
           ),
-          onTap: () => _handlePromoAction(item.actionType, item.actionValue),
+          onTap: () {},
         );
       }).toList();
     }
@@ -1152,7 +1152,7 @@ class _StoreServiceHomeState extends State<StoreServiceHome>
           end: Alignment.bottomRight,
           colors: [Color(0xFF9A7B1F), Color(0xFFD4AF37), Color(0xFF6B5214)],
         ),
-        onTap: () => Get.to(() => const SubscriptionPage()),
+        onTap: () {},
       ),
       _PromoItem(
         title: 'add_your_products'.tr,
@@ -1164,7 +1164,7 @@ class _StoreServiceHomeState extends State<StoreServiceHome>
           end: Alignment.bottomRight,
           colors: [Color(0xFF065F46), Color(0xFF10B981), Color(0xFF064E3B)],
         ),
-        onTap: () => Get.to(() => const AddProductPage()),
+        onTap: () {},
       ),
       _PromoItem(
         title: 'sales_reports'.tr,
@@ -1176,7 +1176,7 @@ class _StoreServiceHomeState extends State<StoreServiceHome>
           end: Alignment.bottomRight,
           colors: [Color(0xFF3730A3), Color(0xFF6366F1), Color(0xFF1E1B4B)],
         ),
-        onTap: () => Get.to(() => const SalesScreen(showBackButton: true)),
+        onTap: () {},
       ),
       _PromoItem(
         title: 'manage_customers'.tr,
@@ -1188,7 +1188,7 @@ class _StoreServiceHomeState extends State<StoreServiceHome>
           end: Alignment.bottomRight,
           colors: [Color(0xFF831843), Color(0xFFE11D48), Color(0xFF4C0519)],
         ),
-        onTap: () => Get.to(() => const CustomerListPage()),
+        onTap: () {},
       ),
     ];
   }
@@ -1226,7 +1226,7 @@ class _StoreServiceHomeState extends State<StoreServiceHome>
     return Padding(
       padding: const EdgeInsets.only(top: 4, bottom: 4),
       child: SizedBox(
-        height: 62,
+        height: 50,
         child: PageView.builder(
           controller: _promoPageController,
           itemCount: promos.length,
@@ -1387,10 +1387,16 @@ class _StoreServiceHomeState extends State<StoreServiceHome>
 
     final List<int> drawOrder = [back, left, right, center];
 
+    // ✅ التصغير بنسبة 20% (× 0.8)
+    const double scaleFactor = 0.8;
+
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      padding: EdgeInsets.symmetric(
+        horizontal: 8 * scaleFactor, // 6.4
+        vertical: 8 * scaleFactor,   // 6.4
+      ),
       child: SizedBox(
-        height: 190,
+        height: 190 * scaleFactor,   // 152
         child: Stack(
           alignment: Alignment.center,
           clipBehavior: Clip.none,
@@ -1415,8 +1421,9 @@ class _StoreServiceHomeState extends State<StoreServiceHome>
                 break;
             }
 
-            const cardWidth = 255.0;
-            const cardHeight = 170.0;
+            // ✅ التصغير بنسبة 20%
+            final double cardWidth = 255.0 * scaleFactor;   // 204
+            final double cardHeight = 170.0 * scaleFactor;  // 136
             final isCenter = delta == 0;
 
             return SizedBox(
