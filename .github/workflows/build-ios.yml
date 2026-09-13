@@ -31,7 +31,6 @@ jobs:
 
       - name: Disable Swift Package Manager
         run: |
-          echo "Disabling Swift Package Manager..."
           flutter config --no-enable-swift-package-manager
           echo "✅ SPM disabled"
 
@@ -45,14 +44,12 @@ jobs:
 
       - name: Regenerate iOS project
         run: |
-          echo "Regenerating iOS project files..."
           rm -rf ios
           flutter create --platforms=ios .
           echo "✅ iOS project regenerated"
 
       - name: Set iOS Deployment Target to 15.5
         run: |
-          echo "Setting iOS deployment target to 15.5..."
           /usr/libexec/PlistBuddy -c "Set :MinimumOSVersion 15.5" ios/Flutter/AppFrameworkInfo.plist || true
           if [ -f ios/Podfile ]; then
             sed -i '' "s/platform :ios, '[0-9.]*'/platform :ios, '15.5'/g" ios/Podfile
@@ -68,11 +65,42 @@ jobs:
           cd ios && pod install --repo-update
           cd ..
 
+      - name: Disable Code Signing
+        run: |
+          echo "Disabling code signing..."
+          cd ios
+          
+          # تعطيل Code Signing في project.pbxproj
+          find . -name "project.pbxproj" -exec sed -i '' \
+            's/CODE_SIGN_IDENTITY = "iPhone Developer";/CODE_SIGN_IDENTITY = "";/g' {} +
+          
+          find . -name "project.pbxproj" -exec sed -i '' \
+            's/CODE_SIGN_IDENTITY = "iPhone Distribution";/CODE_SIGN_IDENTITY = "";/g' {} +
+          
+          find . -name "project.pbxproj" -exec sed -i '' \
+            's/CODE_SIGNING_REQUIRED = YES;/CODE_SIGNING_REQUIRED = NO;/g' {} +
+          
+          find . -name "project.pbxproj" -exec sed -i '' \
+            's/CODE_SIGNING_ALLOWED = YES;/CODE_SIGNING_ALLOWED = NO;/g' {} +
+          
+          find . -name "project.pbxproj" -exec sed -i '' \
+            's/PROVISIONING_PROFILE_SPECIFIER = "[^"]*";/PROVISIONING_PROFILE_SPECIFIER = "";/g' {} +
+          
+          find . -name "project.pbxproj" -exec sed -i '' \
+            's/DEVELOPMENT_TEAM = "[^"]*";/DEVELOPMENT_TEAM = "";/g' {} +
+          
+          cd ..
+          echo "✅ Code signing disabled"
+
       - name: Precache iOS
         run: flutter precache --ios
 
       - name: Build iOS (No Codesign)
-        run: flutter build ios --release --no-codesign
+        run: |
+          flutter build ios --release --no-codesign \
+            --build-name=1.0.0 \
+            --build-number=1 \
+            -v
 
       - name: Create Payload directory
         run: mkdir -p Payload
