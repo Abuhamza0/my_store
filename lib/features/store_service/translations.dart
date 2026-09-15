@@ -375,6 +375,9 @@ class AppTranslations extends Translations {
       'sub_category_hint': 'اسم الصنف',
       'add_sub_category': 'إضافة صنف',
       'add_sub_category_title': 'إضافة صنف في @name',
+      'save_and_exit': 'حفظ وخروج',
+      'exit_without_save': 'خروج بدون حفظ',
+      'product_not_saved': 'لن يتم حفظ المنتج إذا خرجت الآن.\nهل تريد حفظه قبل الخروج؟',
       'sub_category_name': 'اسم الصنف الفرعي',
       'sub_category_name_label': 'اسم الصنف',
       'add_type': 'إضافة نوع',
@@ -420,6 +423,7 @@ class AppTranslations extends Translations {
       'view_products': 'عرض المنتجات',
       'show_all_products': 'عرض كل المنتجات',
       'no_products_in_this_filter': 'لا توجد منتجات في هذا التصفية',
+      'manage_products': 'إدارة المنتجات',
 
       // ========== الطلبات ==========
       'all_orders': 'الكل',
@@ -974,6 +978,7 @@ class AppTranslations extends Translations {
       'no_description': 'No description',
       'add_to_cart': 'Add to Cart',
       'zoom': 'Zoom',
+      'manage_products': 'Manage Products',
 
       // ========== Subscription ==========
       'choose_plan': 'Choose Your Plan',
@@ -988,6 +993,9 @@ class AppTranslations extends Translations {
       'subscribe_now': 'Subscribe Now',
       'trial_expired_title': 'Trial Expired',
       'trial_expired_msg': 'Your trial period has ended. Subscribe to continue.',
+      'save_and_exit': 'Save & Exit',
+      'exit_without_save': 'Exit Without Saving',
+      'product_not_saved': 'The product will not be saved if you exit now.\nDo you want to save it before exiting?',
       'activate_subscription': 'Activate Subscription',
       'enter_activation_code': 'Enter Activation Code',
       'enter_code_required': 'Please enter the code',

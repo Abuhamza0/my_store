@@ -1,4 +1,5 @@
 // customer_list_page.dart
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -64,6 +65,13 @@ class _CustomerListPageState extends State<CustomerListPage>
   late final Animation<double> _fadeAnim;
   late final Animation<Offset> _slideAnim;
 
+  // ═══════════════════════════════════════════════════════════
+  //  🆕 متغيرات العملاء المتصلين
+  // ═══════════════════════════════════════════════════════════
+  Timer? _onlineRefreshTimer;
+  StreamSubscription? _onlineCustomersSubscription;
+  final RxSet<String> _onlineCustomerIds = <String>{}.obs;
+
   @override
   void initState() {
     super.initState();
@@ -90,10 +98,30 @@ class _CustomerListPageState extends State<CustomerListPage>
     for (var c in cc.customers) {
       print('👤 ${c.name} - lastActive: ${c.lastActive}');
     }
+
+    // ═══════════════════════════════════════════════════════════
+    //  🔄 تحديث حالة العملاء دورياً (كل 30 ثانية)
+    // ═══════════════════════════════════════════════════════════
+    _onlineRefreshTimer = Timer.periodic(
+      const Duration(seconds: 30),
+          (_) {
+        if (mounted) {
+          cc.onlineTick.value++;
+          setState(() {});
+        }
+      },
+    );
+
+    // ═══════════════════════════════════════════════════════════
+    //  📡 الاستماع للعملاء المتصلين من السحابة
+    // ═══════════════════════════════════════════════════════════
+    _listenForOnlineCustomers();
   }
 
   @override
   void dispose() {
+    _onlineRefreshTimer?.cancel();
+    _onlineCustomersSubscription?.cancel();
     _animController.dispose();
     super.dispose();
   }
@@ -115,6 +143,50 @@ class _CustomerListPageState extends State<CustomerListPage>
       .get('store_name', defaultValue: 'my_store'.tr)
       ?.toString() ??
       'my_store'.tr;
+
+  // ═══════════════════════════════════════════════════════════════
+  //  📡 الاستماع للعملاء المتصلين من السحابة
+  // ═══════════════════════════════════════════════════════════════
+  void _listenForOnlineCustomers() {
+    final storeId = _getStoreId();
+    if (storeId.isEmpty) {
+      print('⚠️ [OnlineCustomers] storeId فارغ - تخطي');
+      return;
+    }
+
+    _onlineCustomersSubscription?.cancel();
+
+    final threeMinutesAgo = Timestamp.fromDate(
+      DateTime.now().subtract(const Duration(minutes: 3)),
+    );
+
+    print('📡 [OnlineCustomers] بدء الاستماع لـ storeId: $storeId');
+
+    _onlineCustomersSubscription = FirebaseFirestore.instance
+        .collection('customers')
+        .where('store_id', isEqualTo: storeId)
+        .where('lastActive', isGreaterThan: threeMinutesAgo)
+        .snapshots()
+        .listen(
+          (snapshot) {
+        _onlineCustomerIds.clear();
+        for (var doc in snapshot.docs) {
+          _onlineCustomerIds.add(doc.id);
+        }
+
+        print('🟢 [OnlineCustomers] ${_onlineCustomerIds.length} عميل متصل');
+
+        if (mounted) {
+          final cc = Get.find<CustomerController>();
+          cc.onlineTick.value++;
+          setState(() {});
+        }
+      },
+      onError: (error) {
+        print('⚠️ [OnlineCustomers] خطأ: $error');
+      },
+    );
+  }
 
   // ═══════════════════════════════════════════════════════════════
   //  🏗️ البناء الرئيسي
@@ -211,13 +283,11 @@ class _CustomerListPageState extends State<CustomerListPage>
       ),
       child: Row(
         children: [
-          // زر الرجوع
           _headerIconButton(
             icon: Icons.arrow_back_ios_new_rounded,
             onTap: () => Get.back(),
           ),
           const SizedBox(width: 10),
-          // الشعار
           Container(
             width: 42,
             height: 42,
@@ -456,6 +526,19 @@ class _CustomerListPageState extends State<CustomerListPage>
             ),
             Expanded(
               child: _buildStatItem(
+                label: 'online_now'.tr,
+                value: '${_onlineCustomerIds.length}',
+                icon: Icons.wifi_rounded,
+                accent: _Lux.emerald,
+              ),
+            ),
+            Container(
+              width: 1,
+              height: 48,
+              color: Colors.white.withOpacity(0.15),
+            ),
+            Expanded(
+              child: _buildStatItem(
                 label: 'total_sales'.tr,
                 value:
                 '${controller.totalSales.toStringAsFixed(0)} $currency',
@@ -478,8 +561,8 @@ class _CustomerListPageState extends State<CustomerListPage>
     return Row(
       children: [
         Container(
-          width: 42,
-          height: 42,
+          width: 36,
+          height: 36,
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
@@ -489,12 +572,14 @@ class _CustomerListPageState extends State<CustomerListPage>
                 accent.withOpacity(0.12),
               ],
             ),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
             border: Border.all(color: accent.withOpacity(0.35), width: 1),
           ),
-          child: Icon(icon, color: accent == _Lux.gold ? _Lux.goldLight : Colors.white, size: 20),
+          child: Icon(icon,
+              color: accent == _Lux.gold ? _Lux.goldLight : Colors.white,
+              size: 18),
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: 8),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -506,7 +591,7 @@ class _CustomerListPageState extends State<CustomerListPage>
                 overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.cairo(
                   color: Colors.white,
-                  fontSize: 17,
+                  fontSize: 15,
                   fontWeight: FontWeight.w900,
                   height: 1.1,
                 ),
@@ -517,7 +602,7 @@ class _CustomerListPageState extends State<CustomerListPage>
                 overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.cairo(
                   color: Colors.white54,
-                  fontSize: 10,
+                  fontSize: 9,
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -608,125 +693,131 @@ class _CustomerListPageState extends State<CustomerListPage>
       Customer customer, CustomerController controller, bool isDark) {
     controller.onlineTick.value;
 
+    // ═══════════════════════════════════════════════════════════
+    //  ✅ استخدام _onlineCustomerIds (محدث من السحابة)
+    // ═══════════════════════════════════════════════════════════
     final lastActive = customer.lastActive;
-    final isOnline = lastActive != null &&
+
+    // Fallback: lastActive المحلي
+    final isOnlineFallback = lastActive != null &&
         DateTime.now().difference(lastActive).inSeconds < 180;
 
-    final accentColor = isOnline ? _Lux.emerald : _Lux.sapphire;
+    return Obx(() {
+      // ✅ الأولوية: Stream من السحابة، ثم Fallback المحلي
+      final isOnlineNow =
+          _onlineCustomerIds.contains(customer.id) || isOnlineFallback;
 
-    return GestureDetector(
-      onTap: () => _showCustomerDetails(customer, controller),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        decoration: BoxDecoration(
-          color: isDark ? _Lux.navyCard : Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: isOnline
-                ? _Lux.emerald.withOpacity(0.35)
-                : (isDark
-                ? _Lux.gold.withOpacity(0.10)
-                : Colors.black.withOpacity(0.05)),
-            width: isOnline ? 1.5 : 1,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(isDark ? 0.20 : 0.05),
-              blurRadius: 14,
-              offset: const Offset(0, 4),
+      return GestureDetector(
+        onTap: () => _showCustomerDetails(customer, controller),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          decoration: BoxDecoration(
+            color: isDark ? _Lux.navyCard : Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: isOnlineNow
+                  ? _Lux.emerald.withOpacity(0.35)
+                  : (isDark
+                  ? _Lux.gold.withOpacity(0.10)
+                  : Colors.black.withOpacity(0.05)),
+              width: isOnlineNow ? 1.5 : 1,
             ),
-            if (isOnline)
+            boxShadow: [
               BoxShadow(
-                color: _Lux.emerald.withOpacity(0.10),
-                blurRadius: 18,
+                color: Colors.black.withOpacity(isDark ? 0.20 : 0.05),
+                blurRadius: 14,
                 offset: const Offset(0, 4),
               ),
-          ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              // الصورة الرمزية
-              _buildAvatar(customer, isOnline),
-              const SizedBox(width: 12),
-              // المعلومات
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      customer.name.isNotEmpty
-                          ? customer.name
-                          : customer.phone,
-                      style: GoogleFonts.cairo(
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w800,
-                        color: isDark ? Colors.white : _Lux.midnight,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 3),
-                    Row(
-                      children: [
-                        Icon(Icons.phone_android_rounded,
-                            size: 11, color: Colors.grey.shade500),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            customer.phone,
-                            style: GoogleFonts.cairo(
-                              fontSize: 11.5,
-                              color: Colors.grey.shade500,
-                              fontWeight: FontWeight.w600,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            textDirection: TextDirection.ltr,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    _buildStatusBadge(isOnline, lastActive),
-                  ],
+              if (isOnlineNow)
+                BoxShadow(
+                  color: _Lux.emerald.withOpacity(0.10),
+                  blurRadius: 18,
+                  offset: const Offset(0, 4),
                 ),
-              ),
-              const SizedBox(width: 8),
-              // الأزرار
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildActionButton(
-                    icon: Icons.link_rounded,
-                    color: _Lux.emerald,
-                    onTap: () => _copyStoreLink(),
-                    tooltip: 'copy_store_link'.tr,
-                  ),
-                  const SizedBox(height: 6),
-                  _buildActionButton(
-                    icon: Icons.edit_rounded,
-                    color: _Lux.sapphire,
-                    onTap: () =>
-                        Get.to(() => AddCustomerPage(customer: customer)),
-                    tooltip: 'edit'.tr,
-                  ),
-                  const SizedBox(height: 6),
-                  _buildActionButton(
-                    icon: Icons.delete_outline_rounded,
-                    color: _Lux.ruby,
-                    onTap: () => _showDeleteConfirmation(
-                        controller, customer.id, customer.name),
-                    tooltip: 'delete'.tr,
-                  ),
-                ],
-              ),
             ],
           ),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                _buildAvatar(customer, isOnlineNow),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        customer.name.isNotEmpty
+                            ? customer.name
+                            : customer.phone,
+                        style: GoogleFonts.cairo(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w800,
+                          color: isDark ? Colors.white : _Lux.midnight,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 3),
+                      Row(
+                        children: [
+                          Icon(Icons.phone_android_rounded,
+                              size: 11, color: Colors.grey.shade500),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              customer.phone,
+                              style: GoogleFonts.cairo(
+                                fontSize: 11.5,
+                                color: Colors.grey.shade500,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textDirection: TextDirection.ltr,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      _buildStatusBadge(isOnlineNow, lastActive),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildActionButton(
+                      icon: Icons.link_rounded,
+                      color: _Lux.emerald,
+                      onTap: () => _copyStoreLink(),
+                      tooltip: 'copy_store_link'.tr,
+                    ),
+                    const SizedBox(height: 6),
+                    _buildActionButton(
+                      icon: Icons.edit_rounded,
+                      color: _Lux.sapphire,
+                      onTap: () =>
+                          Get.to(() => AddCustomerPage(customer: customer)),
+                      tooltip: 'edit'.tr,
+                    ),
+                    const SizedBox(height: 6),
+                    _buildActionButton(
+                      icon: Icons.delete_outline_rounded,
+                      color: _Lux.ruby,
+                      onTap: () => _showDeleteConfirmation(
+                          controller, customer.id, customer.name),
+                      tooltip: 'delete'.tr,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ),
-      ),
-    );
+      );
+    });
   }
 
   Widget _buildAvatar(Customer customer, bool isOnline) {
@@ -1026,7 +1117,7 @@ class _CustomerListPageState extends State<CustomerListPage>
   }
 
   // ═══════════════════════════════════════════════════════════════
-  //  🔧 الدوال المنطقية (محفوظة بالكامل)
+  //  🔧 الدوال المنطقية
   // ═══════════════════════════════════════════════════════════════
 
   String _formatLastSeen(DateTime dateTime) {
@@ -1087,7 +1178,6 @@ class _CustomerListPageState extends State<CustomerListPage>
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   children: [
-                    // مقبض السحب
                     Container(
                       width: 40,
                       height: 4,
@@ -1097,7 +1187,6 @@ class _CustomerListPageState extends State<CustomerListPage>
                       ),
                     ),
                     const SizedBox(height: 24),
-                    // الصورة الرمزية الكبيرة
                     Container(
                       width: 90,
                       height: 90,
@@ -1142,7 +1231,6 @@ class _CustomerListPageState extends State<CustomerListPage>
                       ),
                     ),
                     const SizedBox(height: 20),
-
                     _buildDetailItem(
                         Icons.phone_android_rounded, 'phone_number'.tr,
                         customer.phone, _Lux.sapphire),
@@ -1150,8 +1238,6 @@ class _CustomerListPageState extends State<CustomerListPage>
                       _buildDetailItem(Icons.person_rounded, 'name'.tr,
                           customer.name, _Lux.violet),
                     const SizedBox(height: 16),
-
-                    // بطاقة الرابط
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
@@ -1255,7 +1341,6 @@ class _CustomerListPageState extends State<CustomerListPage>
                       ),
                     ),
                     const SizedBox(height: 16),
-                    // زر التعديل
                     SizedBox(
                       width: double.infinity,
                       height: 52,
@@ -1520,9 +1605,33 @@ class _CustomerListPageState extends State<CustomerListPage>
                 style: GoogleFonts.cairo(color: Colors.grey)),
           ),
           ElevatedButton.icon(
-            onPressed: () {
+            onPressed: () async {
+              // ✅ حذف محلي
               controller.deleteCustomer(customerId);
+
+              // ✅ حذف من السحابة أيضاً
+              try {
+                final storeId = _getStoreId();
+                if (storeId.isNotEmpty) {
+                  await FirebaseFirestore.instance
+                      .collection('customers')
+                      .doc(customerId)
+                      .delete();
+                  print('🗑️ تم حذف العميل من السحابة: $customerId');
+                }
+              } catch (e) {
+                print('⚠️ فشل حذف العميل من السحابة: $e');
+              }
+
               Navigator.pop(context);
+
+              Get.snackbar(
+                'success'.tr,
+                'customer_deleted'.tr,
+                snackPosition: SnackPosition.BOTTOM,
+                backgroundColor: _Lux.emerald,
+                colorText: Colors.white,
+              );
             },
             icon: const Icon(Icons.delete_rounded,
                 color: Colors.white, size: 16),

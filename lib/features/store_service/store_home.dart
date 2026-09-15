@@ -607,7 +607,7 @@ class _StoreServiceHomeState extends State<StoreServiceHome>
         onTap: () => Get.to(() => const CustomerListPage()),
       ),
       _MainActionCard(
-        title: 'manage_products_card'.tr,
+        title: 'manage_products'.tr,
         subtitle: 'browse_sections'.tr,
         icon: Icons.inventory_2_rounded,
         color: _Lux.emerald,

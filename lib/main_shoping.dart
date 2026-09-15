@@ -13,6 +13,7 @@ import 'features/store_service/product_controller.dart';
 import 'features/store_service/customer_controller.dart';
 import 'features/store_service/order_controller.dart';
 import 'core/services/notification_service.dart';
+import 'features/store_service/translations.dart';
 import 'firebase_options.dart';
 
 void main() async {
@@ -67,6 +68,7 @@ class MyApp extends StatelessWidget {
     return GetMaterialApp(
       title: 'المتجر',
       debugShowCheckedModeBanner: false,
+      translations: AppTranslations(),
       theme: ThemeData(
         primaryColor: const Color(0xFF1A2332),
         useMaterial3: true,

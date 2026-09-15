@@ -61,7 +61,7 @@ class _SalesScreenState extends State<SalesScreen> {
   static const _sessionDuration = Duration(hours: 24);
   Timer? _sessionTimer;
   bool _restoringCredentialSession = true;
-
+  Timer? _activityTimer;
 
   final _searchController = TextEditingController();
   final _searchQuery = ''.obs;
@@ -84,7 +84,7 @@ class _SalesScreenState extends State<SalesScreen> {
 
   String _storeName = 'store'.tr;
   String? _storeLogo;
-  String _currency = 'SAR';
+  final RxString _currency = 'USD'.obs;
   String _resolvedStoreId = '';
 
   final _loginPhoneController = TextEditingController();
@@ -126,7 +126,8 @@ class _SalesScreenState extends State<SalesScreen> {
 
   void _loadSettings() {
     final box = Hive.box('settings');
-    _currency = box.get('currency', defaultValue: 'SAR')?.toString() ?? 'SAR';
+    _currency.value = box.get('currency', defaultValue: 'USD')?.toString() ?? 'USD';
+    print('💰 [Currency] تم تحميل العملة: ${_currency.value}');
   }
 
   Future<void> _loadCustomerLanguage() async {
@@ -188,6 +189,7 @@ class _SalesScreenState extends State<SalesScreen> {
     _registerPasswordController.dispose();
     _registerConfirmPasswordController.dispose();
     _sessionTimer?.cancel();
+    _activityTimer?.cancel();
     _audioPlayer.dispose();
     super.dispose();
   }
@@ -280,10 +282,14 @@ class _SalesScreenState extends State<SalesScreen> {
         final data = doc.data() ?? {};
 
         setState(() {
+          final currencyFromStore = data['currency'] ?? data['currency_symbol'];
+          if (currencyFromStore != null && currencyFromStore.toString().isNotEmpty) {
+            _currency.value = currencyFromStore.toString();
+          }
           _storeExists = true;
           _storeName = (data['name'] ?? data['store_name'] ?? 'store'.tr).toString();
           _storeLogo = (data['logo_url'] ?? data['logo'] ?? data['image'])?.toString();
-          _currency = (data['currency'] ?? data['currency_symbol'] ?? _currency).toString();
+          _currency.value = (data['currency'] ?? data['currency_symbol'] ?? {_currency.value}).toString();
           _error = null;
           _online = true;
         });
@@ -507,6 +513,34 @@ class _SalesScreenState extends State<SalesScreen> {
     } catch (e) {
       debugPrint('FCM token update error: $e');
     }
+    await _updateLastActive(customer.id);
+
+    // ═══════════════════════════════════════════════════════════
+    //  ⏰ بدء Timer لتحديث lastActive كل دقيقة
+    // ═══════════════════════════════════════════════════════════
+    _activityTimer?.cancel();
+    _activityTimer = Timer.periodic(
+      const Duration(minutes: 1),
+          (_) => _updateLastActive(customer.id),
+    );
+
+    // ═══════════════════════════════════════════════════════════
+    //  🔔 FCM Token
+    // ═══════════════════════════════════════════════════════════
+    try {
+      final token = await FirebaseMessaging.instance.getToken();
+      if (token != null && token.isNotEmpty) {
+        await _firestore.collection('customers').doc(customer.id).set(
+          {
+            'fcmToken': token,
+            'store_id': _resolvedStoreId,
+          },
+          SetOptions(merge: true),
+        );
+      }
+    } catch (e) {
+      debugPrint('FCM token update error: $e');
+    }
 
     _notificationSub = _firestore
         .collection('notifications')
@@ -539,8 +573,33 @@ class _SalesScreenState extends State<SalesScreen> {
     );
   }
 
+  /// ═══════════════════════════════════════════════════════════════
+  ///  🔄 تحديث lastActive في السحابة
+  /// ═══════════════════════════════════════════════════════════════
+  Future<void> _updateLastActive(String customerId) async {
+    if (customerId.isEmpty) return;
+    if (_resolvedStoreId.isEmpty) return;
+
+    try {
+      await _firestore.collection('customers').doc(customerId).set(
+        {
+          'lastActive': FieldValue.serverTimestamp(),
+          'isOnline': true,
+          'store_id': _resolvedStoreId,
+        },
+        SetOptions(merge: true),
+      );
+      debugPrint('✅ [LastActive] تحديث: $customerId');
+    } catch (e) {
+      debugPrint('❌ [LastActive] خطأ: $e');
+    }
+  }
+
   Future<void> _logout() async {
     try {
+      _activityTimer?.cancel();  // ← 🆕 جديد
+      _activityTimer = null;
+
       final customer = _customer;
       if (customer != null && customer.id.isNotEmpty) {
         await _firestore.collection('customers').doc(customer.id).set(
@@ -698,6 +757,7 @@ class _SalesScreenState extends State<SalesScreen> {
   Future<void> _expireCredentialSession() async {
     _sessionTimer?.cancel();
     _sessionTimer = null;
+    _activityTimer?.cancel();
 
     final customer = _customer;
     if (customer != null && customer.id.isNotEmpty) {
@@ -1149,7 +1209,7 @@ class _SalesScreenState extends State<SalesScreen> {
           total: _cartTotal,
           oc: _orderController ?? OrderController(),
           loggedInCustomer: _loggedInCustomer,
-          currency: _currency,
+          currency: _currency.value,
           uploadOrder: _uploadOrderToCloud,
         );
       },
@@ -2041,6 +2101,7 @@ class _SalesScreenState extends State<SalesScreen> {
     );
   }
 
+
   void _showAccountMenu() {
     final customer = _customer;
 
@@ -2245,23 +2306,37 @@ class _SalesScreenState extends State<SalesScreen> {
             height: 58,
             padding: const EdgeInsets.symmetric(horizontal: 14),
             decoration: BoxDecoration(
-              gradient: _cart.isEmpty ? null : const LinearGradient(
+              // ═══════════════════════════════════════════════════════
+              //  ✅ لون ذهبي عند امتلاء السلة
+              // ═══════════════════════════════════════════════════════
+              gradient: _cart.isEmpty
+                  ? null
+                  : const LinearGradient(
                 begin: Alignment.centerRight,
                 end: Alignment.centerLeft,
-                colors: [_navy, _navy2],
+                colors: [
+                  Color(0xFFD4AF37),  // ذهبي فاتح
+                  Color(0xFFB8860B),  // ذهبي داكن
+                ],
               ),
-              color: _cart.isEmpty ? (isDark ? const Color(0xFF101827) : Colors.white) : null,
+              color: _cart.isEmpty
+                  ? (isDark ? const Color(0xFF101827) : Colors.white)
+                  : null,
               borderRadius: BorderRadius.circular(18),
               border: Border.all(
                 color: _cart.isEmpty
-                    ? (isDark ? Colors.white.withOpacity(.06) : Colors.black.withOpacity(.06))
-                    : _gold.withOpacity(.55),
+                    ? (isDark
+                    ? Colors.white.withOpacity(.06)
+                    : Colors.black.withOpacity(.06))
+                    : const Color(0xFFD4AF37).withOpacity(.55),
                 width: _cart.isEmpty ? 1 : 1.2,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: _cart.isEmpty ? Colors.black.withOpacity(.05) : _gold.withOpacity(.13),
-                  blurRadius: 14,
+                  color: _cart.isEmpty
+                      ? Colors.black.withOpacity(.05)
+                      : const Color(0xFFD4AF37).withOpacity(.35),
+                  blurRadius: _cart.isEmpty ? 14 : 20,
                   offset: const Offset(0, 5),
                 ),
               ],
@@ -2272,11 +2347,20 @@ class _SalesScreenState extends State<SalesScreen> {
                   width: 39,
                   height: 39,
                   decoration: BoxDecoration(
-                    color: _cart.isEmpty ? _navy : _gold.withOpacity(.18),
+                    color: _cart.isEmpty
+                        ? _navy
+                        : Colors.white.withOpacity(.20),
                     borderRadius: BorderRadius.circular(12),
-                    border: _cart.isEmpty ? null : Border.all(color: _gold.withOpacity(.35)),
+                    border: _cart.isEmpty
+                        ? null
+                        : Border.all(
+                        color: Colors.white.withOpacity(.35)),
                   ),
-                  child: const Icon(Icons.shopping_cart_rounded, color: _goldLight, size: 20),
+                  child: Icon(
+                    Icons.shopping_cart_rounded,
+                    color: _cart.isEmpty ? _goldLight : Colors.white,
+                    size: 20,
+                  ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -2285,18 +2369,28 @@ class _SalesScreenState extends State<SalesScreen> {
                         ? 'cart_empty'.tr
                         : '${_cart.length} ${_cart.length == 1 ? 'item'.tr : 'items'.tr} ${'in_cart'.tr}',
                     style: TextStyle(
-                      color: _cart.isEmpty ? (isDark ? Colors.white : _navy) : Colors.white,
+                      color: _cart.isEmpty
+                          ? (isDark ? Colors.white : _navy)
+                          : Colors.white,
                       fontWeight: FontWeight.w800,
                       fontSize: 12,
                     ),
                   ),
                 ),
                 Text(
-                  '${_cartTotal.value.toStringAsFixed(2)} $_currency',
-                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: _gold),
+                  '${_cartTotal.value.toStringAsFixed(2)} ${_currency.value}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15,
+                    color: _cart.isEmpty ? _gold : Colors.white,
+                  ),
                 ),
                 const SizedBox(width: 8),
-                const Icon(Icons.arrow_back_ios_new_rounded, size: 14, color: _gold),
+                Icon(
+                  Icons.arrow_back_ios_new_rounded,
+                  size: 14,
+                  color: _cart.isEmpty ? _gold : Colors.white,
+                ),
               ],
             ),
           ),
@@ -2744,7 +2838,7 @@ class _SalesScreenState extends State<SalesScreen> {
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
-                        '${product.price.toStringAsFixed(0)} $_currency',
+                        '${product.price.toStringAsFixed(0)} ${_currency.value}',
                         style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900),
                       ),
                     ),
@@ -2874,7 +2968,7 @@ class _SalesScreenState extends State<SalesScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '${product.price.toStringAsFixed(2)} $_currency',
+                    '${product.price.toStringAsFixed(2)} ${_currency.value}',
                     style: const TextStyle(color: _gold, fontWeight: FontWeight.w900),
                   ),
                 ],
@@ -2932,7 +3026,7 @@ class _SalesScreenState extends State<SalesScreen> {
           cart: _cart,
           total: _cartTotal,
           isDark: Theme.of(context).brightness == Brightness.dark,
-          currency: _currency,
+          currency: _currency.value,
           parentContext: context,
           onAddToCart: () {
             _addToCart(product);

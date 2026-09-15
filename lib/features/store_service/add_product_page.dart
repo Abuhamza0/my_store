@@ -79,7 +79,7 @@ class _AddProductPageState extends State<AddProductPage> {
 
   String? _selectedImagePath;
   bool _isSaving = false;
-  bool _showSaveButton = false; // ✅ إظهار/إخفاء زر الحفظ
+  bool _showSaveButton = false;
   String _currency = 'SAR';
 
   List<CustomCategory> _allCategories = [];
@@ -96,7 +96,6 @@ class _AddProductPageState extends State<AddProductPage> {
 
   bool _imagesExpanded = true;
 
-  // ✅ FocusNodes لكل الحقول
   final _nameFocus = FocusNode();
   final _priceFocus = FocusNode();
   final _stockFocus = FocusNode();
@@ -145,19 +144,17 @@ class _AddProductPageState extends State<AddProductPage> {
     _prefillFields();
     _loadRecentProducts();
 
-    // ✅ راقب الحقول الرئيسية لإظهار/إخفاء زر الحفظ
     _nameController.addListener(_checkRequiredFields);
     _priceController.addListener(_checkRequiredFields);
     _typeController.addListener(_checkRequiredFields);
 
-    // ✅ تحقق أولي بعد أول build
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkRequiredFields();
     });
   }
 
   // ═══════════════════════════════════════════════════════════════
-  //  ✅ إظهار/إخفاء زر الحفظ حسب الحقول الرئيسية
+  //  ✅ إظهار/إخفاء زر الحفظ
   // ═══════════════════════════════════════════════════════════════
   void _checkRequiredFields() {
     if (!mounted) return;
@@ -231,7 +228,6 @@ class _AddProductPageState extends State<AddProductPage> {
 
   @override
   void dispose() {
-    // ✅ أزل المستمعين
     _nameController.removeListener(_checkRequiredFields);
     _priceController.removeListener(_checkRequiredFields);
     _typeController.removeListener(_checkRequiredFields);
@@ -254,6 +250,193 @@ class _AddProductPageState extends State<AddProductPage> {
     _typeFocus.dispose();
     _flavorFocus.dispose();
     super.dispose();
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  🚪 تأكيد الخروج
+  // ═══════════════════════════════════════════════════════════════
+  Future<void> _handleBackPress() async {
+    final hasData = _nameController.text.trim().isNotEmpty ||
+        _priceController.text.trim().isNotEmpty ||
+        _typeController.text.trim().isNotEmpty ||
+        _descriptionController.text.trim().isNotEmpty ||
+        _selectedImagePath != null ||
+        _selectedImages.isNotEmpty;
+
+    if (!hasData) {
+      Get.back();
+      return;
+    }
+
+    final result = await Get.dialog<String>(
+      barrierDismissible: false,
+      Dialog(
+        shape:
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        backgroundColor: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.20),
+                blurRadius: 30,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      _Lux.amber.withOpacity(0.20),
+                      _Lux.amber.withOpacity(0.05),
+                    ],
+                  ),
+                  shape: BoxShape.circle,
+                  border:
+                  Border.all(color: _Lux.amber.withOpacity(0.40)),
+                ),
+                child: const Icon(
+                  Icons.warning_amber_rounded,
+                  color: _Lux.amber,
+                  size: 32,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'warning'.tr,
+                style: GoogleFonts.cairo(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: _Lux.midnight,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'product_not_saved'.tr,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.cairo(
+                  fontSize: 13,
+                  color: Colors.grey.shade700,
+                  height: 1.6,
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // ✅ حفظ وخروج
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: _Lux.royalGold,
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _Lux.gold.withOpacity(0.35),
+                        blurRadius: 14,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: ElevatedButton.icon(
+                    onPressed: () => Get.back(result: 'save_and_exit'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      shadowColor: Colors.transparent,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    icon: const Icon(Icons.save_rounded,
+                        color: Colors.white, size: 20),
+                    label: Text(
+                      'save_and_exit'.tr,
+                      style: GoogleFonts.cairo(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+
+              // ✅ خروج بدون حفظ
+              SizedBox(
+                width: double.infinity,
+                height: 46,
+                child: OutlinedButton.icon(
+                  onPressed: () => Get.back(result: 'exit'),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: _Lux.ruby.withOpacity(0.50)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  icon: const Icon(Icons.logout_rounded,
+                      color: _Lux.ruby, size: 18),
+                  label: Text(
+                    'exit_without_save'.tr,
+                    style: GoogleFonts.cairo(
+                      color: _Lux.ruby,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+
+              // ✅ إلغاء
+              SizedBox(
+                width: double.infinity,
+                height: 42,
+                child: TextButton(
+                  onPressed: () => Get.back(result: 'cancel'),
+                  style: TextButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: Text(
+                    'cancel'.tr,
+                    style: GoogleFonts.cairo(
+                      color: Colors.grey.shade600,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+
+    switch (result) {
+      case 'save_and_exit':
+        await _saveProduct(popAfterSave: true);
+        break;
+      case 'exit':
+        Get.back();
+        break;
+      case 'cancel':
+      default:
+        break;
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -567,7 +750,6 @@ class _AddProductPageState extends State<AddProductPage> {
             ? selectedProduct.imagePath
             : null;
       });
-      // ✅ تحقق فوري بعد الملء
       _checkRequiredFields();
     }
   }
@@ -600,7 +782,7 @@ class _AddProductPageState extends State<AddProductPage> {
     return '';
   }
 
-  Future<void> _saveProduct() async {
+  Future<void> _saveProduct({bool popAfterSave = false}) async {
     if (!_formKey.currentState!.validate()) return;
 
     final price = double.tryParse(_priceController.text.trim());
@@ -710,6 +892,12 @@ class _AddProductPageState extends State<AddProductPage> {
       if (!mounted) return;
       setState(() => _isSaving = false);
 
+      // ✅ إذا كان "حفظ وخروج" → اخرج فوراً
+      if (popAfterSave) {
+        if (mounted) Get.back();
+        return;
+      }
+
       final addAnother = await Get.dialog<bool>(
         AlertDialog(
           shape: RoundedRectangleBorder(
@@ -773,7 +961,7 @@ class _AddProductPageState extends State<AddProductPage> {
           _selectedImagePath = null;
           _selectedImages.clear();
           _imagesExpanded = true;
-          _showSaveButton = false; // ✅ أخفِ الزر
+          _showSaveButton = false;
         });
       } else {
         Get.back();
@@ -923,7 +1111,7 @@ class _AddProductPageState extends State<AddProductPage> {
                                   offset: controller.text.length),
                             );
                         Navigator.pop(ctx);
-                        _checkRequiredFields(); // ✅
+                        _checkRequiredFields();
                         if (mounted) setState(() {});
                       },
                     );
@@ -1009,15 +1197,15 @@ class _AddProductPageState extends State<AddProductPage> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 70,
-            height: 70,
+            width: 60,
+            height: 60,
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [color, color.withOpacity(0.7)],
               ),
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(18),
               boxShadow: [
                 BoxShadow(
                   color: color.withOpacity(0.35),
@@ -1026,7 +1214,7 @@ class _AddProductPageState extends State<AddProductPage> {
                 ),
               ],
             ),
-            child: Icon(icon, color: Colors.white, size: 30),
+            child: Icon(icon, color: Colors.white, size: 26),
           ),
           const SizedBox(height: 8),
           Text(
@@ -1082,170 +1270,176 @@ class _AddProductPageState extends State<AddProductPage> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Scaffold(
-      backgroundColor: isDark ? _Lux.bgDark : _Lux.bgLight,
-      body: Form(
-        key: _formKey,
-        child: Column(
-          children: [
-            _buildHeader(isDark),
-            Expanded(
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildImagesSection(isDark),
-                    const SizedBox(height: 20),
-                    _buildSectionTitle(
-                      icon: Icons.category_rounded,
-                      title: 'التصنيف',
-                      color: _Lux.violet,
-                      isDark: isDark,
-                    ),
-                    const SizedBox(height: 10),
-                    _buildLuxField(
-                      label: 'section'.tr,
-                      controller: _sectionController,
-                      focusNode: _sectionFocus,
-                      hint: 'select_section'.tr,
-                      icon: Icons.folder_rounded,
-                      iconColor: _Lux.violet,
-                      suggestions: _sectionSuggestions,
-                      isDark: isDark,
-                    ),
-                    const SizedBox(height: 12),
-                    _buildLuxField(
-                      label: 'sub_category'.tr,
-                      controller: _subCategoryController,
-                      focusNode: _subCategoryFocus,
-                      hint: 'select_sub_category'.tr,
-                      icon: Icons.folder_open_rounded,
-                      iconColor: _Lux.sapphire,
-                      suggestions: _subCategorySuggestions,
-                      isDark: isDark,
-                    ),
-                    const SizedBox(height: 12),
-                    _buildLuxField(
-                      label: 'type_size'.tr,
-                      controller: _typeController,
-                      focusNode: _typeFocus,
-                      hint: 'select_type'.tr,
-                      icon: Icons.category_rounded,
-                      iconColor: _Lux.amber,
-                      suggestions: _typeSuggestions,
-                      isDark: isDark,
-                    ),
-                    const SizedBox(height: 12),
-                    _buildLuxField(
-                      label: 'flavor'.tr,
-                      controller: _flavorController,
-                      focusNode: _flavorFocus,
-                      hint: 'select_flavor'.tr,
-                      icon: Icons.local_drink_rounded,
-                      iconColor: _Lux.emerald,
-                      suggestions: _flavorSuggestions,
-                      isDark: isDark,
-                    ),
-                    const SizedBox(height: 24),
-                    _buildSectionTitle(
-                      icon: Icons.info_rounded,
-                      title: 'المعلومات',
-                      color: _Lux.sapphire,
-                      isDark: isDark,
-                    ),
-                    const SizedBox(height: 10),
-                    _buildLuxField(
-                      label: 'product_name'.tr,
-                      controller: _nameController,
-                      focusNode: _nameFocus,
-                      hint: 'product_name'.tr,
-                      icon: Icons.shopping_bag_rounded,
-                      iconColor: _Lux.gold,
-                      suggestions: _nameSuggestions,
-                      isDark: isDark,
-                      validator: (v) => v == null || v.trim().isEmpty
-                          ? 'required_field'.tr
-                          : null,
-                      isRequired: true,
-                    ),
-                    const SizedBox(height: 12),
-                    _buildLuxField(
-                      label: 'product_description'.tr,
-                      controller: _descriptionController,
-                      focusNode: _descFocus,
-                      hint: 'product_description'.tr,
-                      icon: Icons.description_rounded,
-                      iconColor: _Lux.violet,
-                      suggestions: const [],
-                      isDark: isDark,
-                      maxLines: 3,
-                    ),
-                    const SizedBox(height: 24),
-                    _buildSectionTitle(
-                      icon: Icons.attach_money_rounded,
-                      title: 'السعر والمخزون',
-                      color: _Lux.emerald,
-                      isDark: isDark,
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildLuxField(
-                            label: 'price'.tr,
-                            controller: _priceController,
-                            focusNode: _priceFocus,
-                            hint: '0.00',
-                            icon: Icons.attach_money_rounded,
-                            iconColor: _Lux.emerald,
-                            suggestions: const [],
-                            isDark: isDark,
-                            keyboardType:
-                            const TextInputType.numberWithOptions(
-                                decimal: true),
-                            validator: (v) {
-                              if (v == null || v.trim().isEmpty) {
-                                return 'required_field'.tr;
-                              }
-                              final n = double.tryParse(v.trim());
-                              if (n == null || n <= 0) {
-                                return 'price_invalid'.tr;
-                              }
-                              return null;
-                            },
-                            isRequired: true,
-                            suffix: _currency,
+    // ✅ اعتراض زر الرجوع في النظام
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) async {
+        if (didPop) return;
+        await _handleBackPress();
+      },
+      child: Scaffold(
+        backgroundColor: isDark ? _Lux.bgDark : _Lux.bgLight,
+        body: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              _buildHeader(isDark),
+              Expanded(
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildImagesSection(isDark),
+                      const SizedBox(height: 20),
+                      _buildSectionTitle(
+                        icon: Icons.category_rounded,
+                        title: 'التصنيف',
+                        color: _Lux.violet,
+                        isDark: isDark,
+                      ),
+                      const SizedBox(height: 10),
+                      _buildLuxField(
+                        label: 'section'.tr,
+                        controller: _sectionController,
+                        focusNode: _sectionFocus,
+                        hint: 'select_section'.tr,
+                        icon: Icons.folder_rounded,
+                        iconColor: _Lux.violet,
+                        suggestions: _sectionSuggestions,
+                        isDark: isDark,
+                      ),
+                      const SizedBox(height: 12),
+                      _buildLuxField(
+                        label: 'sub_category'.tr,
+                        controller: _subCategoryController,
+                        focusNode: _subCategoryFocus,
+                        hint: 'select_sub_category'.tr,
+                        icon: Icons.folder_open_rounded,
+                        iconColor: _Lux.sapphire,
+                        suggestions: _subCategorySuggestions,
+                        isDark: isDark,
+                      ),
+                      const SizedBox(height: 12),
+                      _buildLuxField(
+                        label: 'type_size'.tr,
+                        controller: _typeController,
+                        focusNode: _typeFocus,
+                        hint: 'select_type'.tr,
+                        icon: Icons.category_rounded,
+                        iconColor: _Lux.amber,
+                        suggestions: _typeSuggestions,
+                        isDark: isDark,
+                      ),
+                      const SizedBox(height: 12),
+                      _buildLuxField(
+                        label: 'flavor'.tr,
+                        controller: _flavorController,
+                        focusNode: _flavorFocus,
+                        hint: 'select_flavor'.tr,
+                        icon: Icons.local_drink_rounded,
+                        iconColor: _Lux.emerald,
+                        suggestions: _flavorSuggestions,
+                        isDark: isDark,
+                      ),
+                      const SizedBox(height: 24),
+                      _buildSectionTitle(
+                        icon: Icons.info_rounded,
+                        title: 'المعلومات',
+                        color: _Lux.sapphire,
+                        isDark: isDark,
+                      ),
+                      const SizedBox(height: 10),
+                      _buildLuxField(
+                        label: 'product_name'.tr,
+                        controller: _nameController,
+                        focusNode: _nameFocus,
+                        hint: 'product_name'.tr,
+                        icon: Icons.shopping_bag_rounded,
+                        iconColor: _Lux.gold,
+                        suggestions: _nameSuggestions,
+                        isDark: isDark,
+                        validator: (v) => v == null || v.trim().isEmpty
+                            ? 'required_field'.tr
+                            : null,
+                        isRequired: true,
+                      ),
+                      const SizedBox(height: 12),
+                      _buildLuxField(
+                        label: 'product_description'.tr,
+                        controller: _descriptionController,
+                        focusNode: _descFocus,
+                        hint: 'product_description'.tr,
+                        icon: Icons.description_rounded,
+                        iconColor: _Lux.violet,
+                        suggestions: const [],
+                        isDark: isDark,
+                        maxLines: 3,
+                      ),
+                      const SizedBox(height: 24),
+                      _buildSectionTitle(
+                        icon: Icons.attach_money_rounded,
+                        title: 'السعر والمخزون',
+                        color: _Lux.emerald,
+                        isDark: isDark,
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildLuxField(
+                              label: 'price'.tr,
+                              controller: _priceController,
+                              focusNode: _priceFocus,
+                              hint: '0.00',
+                              icon: Icons.attach_money_rounded,
+                              iconColor: _Lux.emerald,
+                              suggestions: const [],
+                              isDark: isDark,
+                              keyboardType:
+                              const TextInputType.numberWithOptions(
+                                  decimal: true),
+                              validator: (v) {
+                                if (v == null || v.trim().isEmpty) {
+                                  return 'required_field'.tr;
+                                }
+                                final n = double.tryParse(v.trim());
+                                if (n == null || n <= 0) {
+                                  return 'price_invalid'.tr;
+                                }
+                                return null;
+                              },
+                              isRequired: true,
+                              suffix: _currency,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _buildLuxField(
-                            label: 'stock'.tr,
-                            controller: _stockController,
-                            focusNode: _stockFocus,
-                            hint: '0',
-                            icon: Icons.inventory_2_rounded,
-                            iconColor: _Lux.amber,
-                            suggestions: const [],
-                            isDark: isDark,
-                            textInputAction: TextInputAction.done,
-                            keyboardType: TextInputType.number,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildLuxField(
+                              label: 'stock'.tr,
+                              controller: _stockController,
+                              focusNode: _stockFocus,
+                              hint: '0',
+                              icon: Icons.inventory_2_rounded,
+                              iconColor: _Lux.amber,
+                              suggestions: const [],
+                              isDark: isDark,
+                              textInputAction: TextInputAction.done,
+                              keyboardType: TextInputType.number,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                  ],
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-      floatingActionButton: _buildSaveButton(isDark),
     );
   }
 
@@ -1288,7 +1482,7 @@ class _AddProductPageState extends State<AddProductPage> {
         children: [
           _iconButton(
             icon: Icons.arrow_back_ios_new_rounded,
-            onTap: () => Get.back(),
+            onTap: _handleBackPress,
           ),
           const SizedBox(width: 10),
           Container(
@@ -1348,6 +1542,8 @@ class _AddProductPageState extends State<AddProductPage> {
             onTap: _showRecentProducts,
             tooltip: 'view_previous'.tr,
           ),
+          const SizedBox(width: 8),
+          _buildHeaderSaveButton(),
         ],
       ),
     );
@@ -1384,14 +1580,99 @@ class _AddProductPageState extends State<AddProductPage> {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  //  🖼️ قسم الصور
+  //  💾 زر الحفظ في الهيدر
+  // ═══════════════════════════════════════════════════════════════
+  Widget _buildHeaderSaveButton() {
+    return AnimatedScale(
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutBack,
+      scale: _showSaveButton ? 1.0 : 0.0,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 220),
+        opacity: _showSaveButton ? 1.0 : 0.0,
+        child: IgnorePointer(
+          ignoring: !_showSaveButton,
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              onTap: _isSaving ? null : _saveProduct,
+              borderRadius: BorderRadius.circular(12),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                height: 42,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                decoration: BoxDecoration(
+                  gradient: _isSaving
+                      ? LinearGradient(
+                    colors: [
+                      Colors.grey.shade400,
+                      Colors.grey.shade600,
+                    ],
+                  )
+                      : _Lux.royalGold,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _Lux.gold.withOpacity(
+                        _isSaving ? 0.15 : 0.45,
+                      ),
+                      blurRadius: 14,
+                      spreadRadius: 0.5,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.20),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_isSaving)
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2.2,
+                        ),
+                      )
+                    else
+                      const Icon(
+                        Icons.save_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                    const SizedBox(width: 6),
+                    Text(
+                      _isSaving ? 'saving'.tr : 'save'.tr,
+                      style: GoogleFonts.cairo(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  🖼️ قسم الصور (مُصغَّر)
   // ═══════════════════════════════════════════════════════════════
 
   Widget _buildImagesSection(bool isDark) {
     return Container(
       decoration: BoxDecoration(
         color: isDark ? _Lux.navyCard : Colors.white,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: isDark
               ? _Lux.gold.withOpacity(0.12)
@@ -1400,8 +1681,8 @@ class _AddProductPageState extends State<AddProductPage> {
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(isDark ? 0.20 : 0.05),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
+            blurRadius: 14,
+            offset: const Offset(0, 5),
           ),
         ],
       ),
@@ -1409,27 +1690,27 @@ class _AddProductPageState extends State<AddProductPage> {
         children: [
           InkWell(
             borderRadius:
-            const BorderRadius.vertical(top: Radius.circular(22)),
+            const BorderRadius.vertical(top: Radius.circular(20)),
             onTap: () =>
                 setState(() => _imagesExpanded = !_imagesExpanded),
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(12),
               child: Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(7),
+                    padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
                       gradient: _Lux.royalGold,
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(9),
                     ),
                     child: const Icon(Icons.photo_library_rounded,
-                        color: Colors.white, size: 16),
+                        color: Colors.white, size: 15),
                   ),
                   const SizedBox(width: 10),
                   Text(
                     'product_images'.tr,
                     style: GoogleFonts.cairo(
-                      fontSize: 14,
+                      fontSize: 13,
                       fontWeight: FontWeight.bold,
                       color: isDark ? Colors.white : _Lux.midnight,
                     ),
@@ -1459,6 +1740,7 @@ class _AddProductPageState extends State<AddProductPage> {
                       Icons.keyboard_arrow_down_rounded,
                       color:
                       isDark ? Colors.white54 : Colors.grey.shade600,
+                      size: 20,
                     ),
                   ),
                 ],
@@ -1471,11 +1753,11 @@ class _AddProductPageState extends State<AddProductPage> {
                 ? CrossFadeState.showFirst
                 : CrossFadeState.showSecond,
             firstChild: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
               child: Column(
                 children: [
                   _buildImagePicker(isDark),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   _buildMultipleImagesGallery(isDark),
                 ],
               ),
@@ -1492,7 +1774,7 @@ class _AddProductPageState extends State<AddProductPage> {
       onTap: _pickImage,
       child: Container(
         width: double.infinity,
-        height: 170,
+        height: 120, // ✅ كان 170
         decoration: BoxDecoration(
           gradient: _selectedImagePath == null
               ? LinearGradient(
@@ -1509,7 +1791,7 @@ class _AddProductPageState extends State<AddProductPage> {
             ],
           )
               : null,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: _Lux.gold.withOpacity(0.30),
             width: 1.5,
@@ -1520,14 +1802,14 @@ class _AddProductPageState extends State<AddProductPage> {
           fit: StackFit.expand,
           children: [
             ClipRRect(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(12),
               child: ImageHelper.displayImage(
                 imagePath: _selectedImagePath,
                 width: double.infinity,
                 height: double.infinity,
                 fit: BoxFit.cover,
                 errorWidget:
-                const Icon(Icons.broken_image, size: 50),
+                const Icon(Icons.broken_image, size: 40),
               ),
             ),
             Positioned(
@@ -1535,7 +1817,7 @@ class _AddProductPageState extends State<AddProductPage> {
               right: 0,
               bottom: 0,
               child: Container(
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
@@ -1546,39 +1828,39 @@ class _AddProductPageState extends State<AddProductPage> {
                     ],
                   ),
                   borderRadius: const BorderRadius.vertical(
-                    bottom: Radius.circular(16),
+                    bottom: Radius.circular(12),
                   ),
                 ),
                 child: Text(
                   'الصورة الرئيسية',
                   style: GoogleFonts.cairo(
                     color: Colors.white,
-                    fontSize: 11,
+                    fontSize: 10,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
             ),
             Positioned(
-              top: 8,
-              right: 8,
+              top: 6,
+              right: 6,
               child: GestureDetector(
                 onTap: () =>
                     setState(() => _selectedImagePath = null),
                 child: Container(
-                  padding: const EdgeInsets.all(6),
+                  padding: const EdgeInsets.all(5),
                   decoration: BoxDecoration(
                     color: _Lux.ruby,
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(8),
                     boxShadow: [
                       BoxShadow(
                         color: _Lux.ruby.withOpacity(0.4),
-                        blurRadius: 8,
+                        blurRadius: 6,
                       ),
                     ],
                   ),
                   child: const Icon(Icons.close_rounded,
-                      color: Colors.white, size: 14),
+                      color: Colors.white, size: 12),
                 ),
               ),
             ),
@@ -1588,28 +1870,28 @@ class _AddProductPageState extends State<AddProductPage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 56,
-              height: 56,
+              width: 44, // ✅ كان 56
+              height: 44,
               decoration: BoxDecoration(
                 gradient: _Lux.royalGold,
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
                     color: _Lux.gold.withOpacity(0.35),
-                    blurRadius: 16,
+                    blurRadius: 14,
                     spreadRadius: 1,
                   ),
                 ],
               ),
               child: const Icon(Icons.add_photo_alternate_rounded,
-                  color: Colors.white, size: 28),
+                  color: Colors.white, size: 22), // ✅ كان 28
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             Text(
               'add_image'.tr,
               style: GoogleFonts.cairo(
                 color: isDark ? Colors.white70 : _Lux.midnight,
-                fontSize: 13,
+                fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -1618,7 +1900,7 @@ class _AddProductPageState extends State<AddProductPage> {
               'اضغط لاختيار صورة رئيسية',
               style: GoogleFonts.cairo(
                 color: Colors.grey.shade500,
-                fontSize: 10,
+                fontSize: 9.5,
               ),
             ),
           ],
@@ -1629,7 +1911,7 @@ class _AddProductPageState extends State<AddProductPage> {
 
   Widget _buildMultipleImagesGallery(bool isDark) {
     return SizedBox(
-      height: 90,
+      height: 70, // ✅ كان 90
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         itemCount: _selectedImages.length + 1,
@@ -1638,38 +1920,38 @@ class _AddProductPageState extends State<AddProductPage> {
             return GestureDetector(
               onTap: _pickMultipleImages,
               child: Container(
-                width: 80,
-                height: 80,
+                width: 62, // ✅ كان 80
+                height: 62,
                 decoration: BoxDecoration(
                   color: _Lux.gold.withOpacity(0.10),
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: _Lux.gold.withOpacity(0.40),
-                    width: 1.5,
+                    width: 1.4,
                   ),
                 ),
                 child: const Icon(Icons.add_a_photo_rounded,
-                    color: _Lux.goldDeep, size: 24),
+                    color: _Lux.goldDeep, size: 20), // ✅ كان 24
               ),
             );
           }
           final image = _selectedImages[index];
           return Padding(
-            padding: const EdgeInsets.only(right: 8),
+            padding: const EdgeInsets.only(right: 6),
             child: Stack(
               children: [
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(12),
                   child: ImageHelper.displayImage(
                     imagePath: image,
-                    width: 80,
-                    height: 80,
+                    width: 62,
+                    height: 62,
                     fit: BoxFit.cover,
                   ),
                 ),
                 Positioned(
-                  top: 4,
-                  right: 4,
+                  top: 3,
+                  right: 3,
                   child: GestureDetector(
                     onTap: () {
                       setState(() {
@@ -1683,13 +1965,13 @@ class _AddProductPageState extends State<AddProductPage> {
                       });
                     },
                     child: Container(
-                      padding: const EdgeInsets.all(4),
+                      padding: const EdgeInsets.all(3),
                       decoration: BoxDecoration(
                         color: _Lux.ruby,
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(6),
                       ),
                       child: const Icon(Icons.close_rounded,
-                          color: Colors.white, size: 12),
+                          color: Colors.white, size: 10),
                     ),
                   ),
                 ),
@@ -1766,7 +2048,6 @@ class _AddProductPageState extends State<AddProductPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // التسمية
         Padding(
           padding: const EdgeInsets.only(bottom: 6, left: 4),
           child: Row(
@@ -1795,7 +2076,6 @@ class _AddProductPageState extends State<AddProductPage> {
             ],
           ),
         ),
-
         showAutocomplete
             ? RawAutocomplete<String>(
           textEditingController: controller,
@@ -1820,7 +2100,7 @@ class _AddProductPageState extends State<AddProductPage> {
                 TextSelection.fromPosition(
                   TextPosition(offset: controller.text.length),
                 );
-            _checkRequiredFields(); // ✅
+            _checkRequiredFields();
             if (mounted) setState(() {});
           },
           fieldViewBuilder: (context, textController, fNode,
@@ -1830,6 +2110,7 @@ class _AddProductPageState extends State<AddProductPage> {
               focusNode: fNode,
               hint: hint,
               isDark: isDark,
+              icon: icon,
               iconColor: iconColor,
               keyboardType: keyboardType,
               textInputAction: textInputAction,
@@ -1901,6 +2182,7 @@ class _AddProductPageState extends State<AddProductPage> {
           focusNode: effectiveFocus,
           hint: hint,
           isDark: isDark,
+          icon: icon,
           iconColor: iconColor,
           keyboardType: keyboardType,
           textInputAction: textInputAction,
@@ -1918,6 +2200,7 @@ class _AddProductPageState extends State<AddProductPage> {
     required FocusNode? focusNode,
     required String hint,
     required bool isDark,
+    required IconData icon,
     required Color iconColor,
     required TextInputType keyboardType,
     required TextInputAction textInputAction,
@@ -1947,39 +2230,55 @@ class _AddProductPageState extends State<AddProductPage> {
           fontSize: 12.5,
           fontWeight: FontWeight.w500,
         ),
+        // ✅ المظهر الجديد: حقل نص واضح
         filled: true,
-        fillColor: isDark ? _Lux.navyCard : Colors.white,
+        fillColor: isDark
+            ? const Color(0xFF0E1622)
+            : const Color(0xFFFAFBFC),
         contentPadding: EdgeInsets.symmetric(
           horizontal: 14,
           vertical: maxLines > 1 ? 14 : 15,
         ),
+        // ✅ حدود أوضح
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(
             color: isDark
-                ? _Lux.gold.withOpacity(0.12)
-                : Colors.black.withOpacity(0.06),
+                ? Colors.white.withOpacity(0.10)
+                : Colors.grey.shade300,
+            width: 1.2,
           ),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(
             color: isDark
-                ? _Lux.gold.withOpacity(0.12)
-                : Colors.black.withOpacity(0.06),
+                ? Colors.white.withOpacity(0.10)
+                : Colors.grey.shade300,
+            width: 1.2,
           ),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: iconColor, width: 1.6),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: iconColor, width: 2.0),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _Lux.ruby, width: 1.2),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: _Lux.ruby, width: 1.6),
         ),
         focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _Lux.ruby, width: 1.6),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: _Lux.ruby, width: 2.0),
+        ),
+        // ✅ أيقونة داخل الحقل
+        prefixIcon: Icon(
+          icon,
+          color: iconColor.withOpacity(0.75),
+          size: 19,
+        ),
+        prefixIconConstraints: const BoxConstraints(
+          minWidth: 42,
+          minHeight: 30,
         ),
         suffixIcon: suffixIcon ??
             (suffix != null
@@ -1999,91 +2298,6 @@ class _AddProductPageState extends State<AddProductPage> {
         suffixIconConstraints: const BoxConstraints(
           minWidth: 50,
           minHeight: 30,
-        ),
-      ),
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  //  💾 زر الحفظ العائم — يظهر عند اكتمال الحقول الرئيسية
-  // ═══════════════════════════════════════════════════════════════
-
-  Widget _buildSaveButton(bool isDark) {
-    return AnimatedSlide(
-      duration: const Duration(milliseconds: 320),
-      curve: Curves.easeOutCubic,
-      offset: _showSaveButton ? Offset.zero : const Offset(0, 1.6),
-      child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 280),
-        curve: Curves.easeOut,
-        opacity: _showSaveButton ? 1.0 : 0.0,
-        child: IgnorePointer(
-          ignoring: !_showSaveButton,
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            width: double.infinity,
-            height: 58,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              boxShadow: [
-                BoxShadow(
-                  color: _Lux.gold.withOpacity(0.40),
-                  blurRadius: 22,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
-            child: ElevatedButton(
-              onPressed: _isSaving ? null : _saveProduct,
-              style: ElevatedButton.styleFrom(
-                padding: EdgeInsets.zero,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18)),
-                elevation: 0,
-                backgroundColor: Colors.transparent,
-              ),
-              child: Ink(
-                decoration: BoxDecoration(
-                  gradient: _isSaving
-                      ? LinearGradient(colors: [
-                    Colors.grey.shade400,
-                    Colors.grey.shade600
-                  ])
-                      : _Lux.royalGold,
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: Container(
-                  alignment: Alignment.center,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (_isSaving)
-                        const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2.5,
-                          ),
-                        )
-                      else
-                        const Icon(Icons.save_rounded,
-                            color: Colors.white, size: 22),
-                      const SizedBox(width: 10),
-                      Text(
-                        _isSaving ? 'saving'.tr : 'save_product'.tr,
-                        style: GoogleFonts.cairo(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
         ),
       ),
     );

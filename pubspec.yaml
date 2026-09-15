@@ -71,7 +71,6 @@ flutter:
   assets:
     - assets/images/
     - assets/sounds/
-    - assets/images/Ryaal.png
     - "assets/translations/ar.json"
 
 

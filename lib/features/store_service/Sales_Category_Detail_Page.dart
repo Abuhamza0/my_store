@@ -37,7 +37,7 @@ class SalesCategoryDetailPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final pc = Get.find<ProductController>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final currency = Hive.box('settings').get('currency', defaultValue: 'SAR');
+    final currency = Hive.box('settings').get('currency', defaultValue: 'USD');
 
     final selectedSub = 'all'.obs;
     final selectedShape = 'all'.obs;

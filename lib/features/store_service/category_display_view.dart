@@ -218,28 +218,38 @@ class _CategoryDisplayViewState extends State<CategoryDisplayView> {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  //  💾 حفظ التصنيفات — مع deviceId تلقائياً
+  // ═══════════════════════════════════════════════════════════════
   void _saveCategories() async {
+    // 1. حفظ محلي في Hive
     Hive.box('settings')
         .put('custom_categories_data', cats.map((c) => c.toJson()).toList());
 
+    // 2. التحقق من storeId
     final storeId = StoreIdService.getStoreId();
     if (storeId.isEmpty || storeId == 'default_store') {
       print('⚠️ Cannot save categories - invalid storeId');
       return;
     }
 
+    // 3. معالجة الصور
     final processedCategories = await _processImagesInCategories(
         cats.map((c) => c.toJson()).toList());
 
+    // 4. الرفع إلى Firestore مع deviceId تلقائياً
     try {
       await FirebaseFirestore.instance
           .collection('categories')
           .doc(storeId)
-          .set({
-        'custom_categories_data': processedCategories,
-        'store_id': storeId,
-        'updated_at': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+          .set(
+        StoreIdService.stamp({
+          'custom_categories_data': processedCategories,
+          'store_id': storeId,
+          'updated_at': FieldValue.serverTimestamp(),
+        }),
+        SetOptions(merge: true),
+      );
 
       print('✅ Categories uploaded to cloud successfully');
     } catch (e) {
@@ -297,6 +307,14 @@ class _CategoryDisplayViewState extends State<CategoryDisplayView> {
 
   @override
   Widget build(BuildContext context) {
+    if (cats.isEmpty && pc.products.isNotEmpty) {
+      // استخدم Future.microtask لتجنب التعديل أثناء البناء
+      Future.microtask(() => _autoGenerateCategoriesFromProducts());
+
+      // اعرض شاشة تحميل مؤقتة
+      return _buildGeneratingState();
+    }
+
     if (cats.isEmpty) return _buildEmptyCategoriesState();
 
     return Column(
@@ -350,8 +368,183 @@ class _CategoryDisplayViewState extends State<CategoryDisplayView> {
     );
   }
 
+  /// ═══════════════════════════════════════════════════════════════
+  ///  🪄 إنشاء الأقسام تلقائياً من بيانات المنتجات
+  ///  (يُستخدم فقط إذا كانت السحابة فارغة من الأقسام)
+  /// ═══════════════════════════════════════════════════════════════
+  void _autoGenerateCategoriesFromProducts() {
+    // ✅ 1. تحقق أن الأقسام فارغة
+    if (cats.isNotEmpty) return;
+
+    // ✅ 2. تحقق أن هناك منتجات
+    final products = pc.products.toList();
+    if (products.isEmpty) {
+      print('ℹ️ [AutoCats] لا توجد منتجات لاستخراج الأقسام');
+      return;
+    }
+
+    print('🪄 [AutoCats] بدء استخراج الأقسام من ${products.length} منتج...');
+
+    // ═══════════════════════════════════════════════════════════
+    //  📊 3. جمع البيانات الفريدة
+    // ═══════════════════════════════════════════════════════════
+    final Map<String, Set<String>> categoriesMap = {}; // category → flavors
+    final Set<String> allFlavors = {};
+
+    for (final product in products) {
+      final category = product.category.trim();
+      final flavor = product.flavor?.trim() ?? '';
+
+      if (category.isEmpty || category == 'general') continue;
+
+      // إضافة القسم
+      categoriesMap.putIfAbsent(category, () => <String>{});
+
+      // إضافة النكهة للقسم
+      if (flavor.isNotEmpty) {
+        categoriesMap[category]!.add(flavor);
+        allFlavors.add(flavor);
+      }
+    }
+
+    if (categoriesMap.isEmpty) {
+      print('ℹ️ [AutoCats] لا توجد أقسام صالحة للاستخراج');
+      return;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  🏗️ 4. بناء الأقسام
+    // ═══════════════════════════════════════════════════════════
+    final List<CustomCategory> generatedCategories = [];
+
+    categoriesMap.forEach((categoryName, flavors) {
+      // ─── القسم ───
+      final category = CustomCategory(
+        name: categoryName,
+        imagePath: null,
+        subCategories: [],
+      );
+
+      // ─── القسم الفرعي (نوع عام) ───
+      final subCategory = SubCategory(
+        name: categoryName,  // نفس اسم القسم
+        imagePath: null,
+        subCategories: [],
+        flavors: [],
+      );
+
+      // ─── الأنواع الفرعية (إذا كانت النكهات كثيرة) ───
+      if (flavors.isNotEmpty) {
+        // كل نكهة تصبح "نوع" تحت القسم الفرعي
+        for (final flavor in flavors) {
+          final flavorType = SubCategory(
+            name: flavor,
+            imagePath: null,
+            subCategories: [],
+            flavors: [Flavor(name: flavor)],
+          );
+          subCategory.subCategories!.add(flavorType);
+        }
+
+        // ✅ أيضاً احتفظ بالنكهات على المستوى الأول
+        for (final flavor in flavors) {
+          subCategory.flavors!.add(Flavor(name: flavor));
+        }
+      }
+
+      category.subCategories.add(subCategory);
+      generatedCategories.add(category);
+    });
+
+    // ═══════════════════════════════════════════════════════════
+    //  💾 5. الحفظ في cats + Hive
+    // ═══════════════════════════════════════════════════════════
+    cats.assignAll(generatedCategories);
+
+    Hive.box('settings').put(
+      'custom_categories_data',
+      cats.map((c) => c.toJson()).toList(),
+    );
+
+    print('✅ [AutoCats] تم إنشاء ${generatedCategories.length} قسم من المنتجات');
+
+    // ═══════════════════════════════════════════════════════════
+    //  📤 6. رفع إلى السحابة (اختياري)
+    // ═══════════════════════════════════════════════════════════
+    _saveCategories();
+
+    // ═══════════════════════════════════════════════════════════
+    //  📢 7. إشعار المستخدم
+    // ═══════════════════════════════════════════════════════════
+    Get.snackbar(
+      '🪄 تم إنشاء الأقسام تلقائياً',
+      'تم استخراج ${generatedCategories.length} قسم من ${products.length} منتج',
+      snackPosition: SnackPosition.BOTTOM,
+      backgroundColor: _Lux.emerald,
+      colorText: Colors.white,
+      duration: const Duration(seconds: 4),
+      margin: const EdgeInsets.all(12),
+      borderRadius: 12,
+    );
+  }
+
+  /// حالة "جارٍ إنشاء الأقسام"
+  Widget _buildGeneratingState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                colors: [
+                  _Lux.gold.withOpacity(0.15),
+                  _Lux.gold.withOpacity(0.04),
+                ],
+              ),
+              border: Border.all(
+                color: _Lux.gold.withOpacity(0.30),
+                width: 1.5,
+              ),
+            ),
+            child: const Center(
+              child: SizedBox(
+                width: 30,
+                height: 30,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  valueColor: AlwaysStoppedAnimation<Color>(_Lux.gold),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'جارٍ إنشاء الأقسام من المنتجات...',
+            style: GoogleFonts.cairo(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: isDark ? Colors.white : _Lux.midnight,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'يتم استخراج الأقسام والنكهات تلقائياً',
+            style: GoogleFonts.cairo(
+              fontSize: 11,
+              color: Colors.grey.shade500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ═══════════════════════════════════════════════════════════════
-  //  🎯 شريط الفئات العام (مع إمكانية السحب الأفقي والتحرير)
+  //  🎯 شريط الفئات العام
   // ═══════════════════════════════════════════════════════════════
 
   Widget _buildBarWithFixedLabel({
@@ -391,7 +584,6 @@ class _CategoryDisplayViewState extends State<CategoryDisplayView> {
       ),
       child: Row(
         children: [
-          // ═══ التسمية (Label) ═══
           Obx(() {
             final visible = labelVisible.value;
             return AnimatedContainer(
@@ -445,7 +637,6 @@ class _CategoryDisplayViewState extends State<CategoryDisplayView> {
           }),
           const SizedBox(width: 3),
 
-          // ═══ قائمة الـ Chips ═══
           Expanded(
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
@@ -454,7 +645,6 @@ class _CategoryDisplayViewState extends State<CategoryDisplayView> {
               const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
               itemCount: items.length + 2 + extraActions.length,
               itemBuilder: (context, index) {
-                // زر "الكل"
                 if (index == 0) {
                   return Obx(() {
                     final isSelected = selectedValue.value == 'all';
@@ -467,7 +657,6 @@ class _CategoryDisplayViewState extends State<CategoryDisplayView> {
                   });
                 }
 
-                // عناصر عادية
                 if (index < items.length + 1) {
                   final item = items[index - 1];
                   return Obx(() {
@@ -484,12 +673,10 @@ class _CategoryDisplayViewState extends State<CategoryDisplayView> {
                   });
                 }
 
-                // زر الإضافة
                 if (index == items.length + 1) {
                   return _buildAddButton(onTap: onAddTap, color: color);
                 }
 
-                // إجراءات إضافية
                 return extraActions[index - items.length - 2];
               },
             ),
@@ -500,7 +687,7 @@ class _CategoryDisplayViewState extends State<CategoryDisplayView> {
   }
 
   // ═══════════════════════════════════════════════════════════════
-//  ✏️ حوار تعديل الاسم فقط (بدون صورة)
+//  ✏️ حوار تعديل الاسم فقط
 // ═══════════════════════════════════════════════════════════════
   Future<String?> _promptForNameOnly({
     required String title,
@@ -1094,6 +1281,8 @@ class _CategoryDisplayViewState extends State<CategoryDisplayView> {
           : [],
     );
   }
+
+
 
   Widget _buildLevelFourBar(SubCategory type, CustomCategory cat) {
     final flavors = type.flavors ?? [];
@@ -2504,7 +2693,7 @@ class _CategoryDisplayViewState extends State<CategoryDisplayView> {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  //  ✏️ دوال التعديل (جديدة — لكل العناصر)
+  //  ✏️ دوال التعديل
   // ═══════════════════════════════════════════════════════════════
 
   Future<void> _editCategory(CustomCategory cat) async {
@@ -2909,7 +3098,7 @@ class _CategoryDisplayViewState extends State<CategoryDisplayView> {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  ArrowTabClipper (محفوظ)
+//  ArrowTabClipper
 // ═══════════════════════════════════════════════════════════════
 class ArrowTabClipper extends CustomClipper<Path> {
   final double cutSize;
@@ -2945,7 +3134,7 @@ class ArrowTabClipper extends CustomClipper<Path> {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  Product Full Screen Gallery (محفوظ بالكامل)
+//  Product Full Screen Gallery
 // ═══════════════════════════════════════════════════════════════
 class _ProductFullScreenGallery extends StatefulWidget {
   final List<String> images;
@@ -3323,16 +3512,6 @@ class _ProductFullScreenGalleryState
       ),
     );
   }
-
-  // ═══════════════════════════════════════════════════════════════
-//  🎯 نافذة الحوار الموحّدة عند الضغط المطول
-// ═══════════════════════════════════════════════════════════════
-
-
-// ───────────────────────────────────────────────────────────────
-//  ✏️ حوار تعديل الاسم فقط (بدون صورة)
-// ───────────────────────────────────────────────────────────────
-
 
   Widget _galleryNavigationButton({
     required IconData icon,

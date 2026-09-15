@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'store_id_service.dart';
+import 'package:hive/hive.dart';
 
 class SessionService {
   static const String deviceIdKey = 'device_id';
@@ -15,6 +16,8 @@ class SessionService {
       deviceId = 'device_${DateTime.now().millisecondsSinceEpoch}_${(DateTime.now().microsecondsSinceEpoch % 100000)}';
       await prefs.setString(deviceIdKey, deviceId);
     }
+    // ✅ احفظه في Hive للاستخدام في القواعد
+    Hive.box('settings').put('device_id', deviceId);
     return deviceId;
   }
 
@@ -163,4 +166,5 @@ class SessionService {
       print('❌ خطأ في إنهاء الجلسة: $e');
     }
   }
+
 }
